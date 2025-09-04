@@ -1,0 +1,23 @@
+# Node / Frontend
+frontend/node_modules
+frontend/.vite
+frontend/dist
+*.log
+
+# Python / Backend
+backend/.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+
+# Vector DB (Chroma persistence)
+backend/data/chroma/
+
+# Env & local settings
+**/.env
+**/.env.*
+.DS_Store
+.idea/
+.vscode/
