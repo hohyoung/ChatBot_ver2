@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+chromadb
+openai>=1.40.0
+python-jose[cryptography]
+passlib[bcrypt]
+pypdf
+python-docx
+beautifulsoup4
