@@ -6,6 +6,7 @@ from app.services.logging import setup_logging
 
 from app.router import chat
 from app.router import docs  
+from app.router import feedback
 try:
     from app.router import auth as auth_router
 except Exception:
@@ -55,3 +56,4 @@ app.include_router(chat.router, tags=["chat"])
 app.include_router(docs.router, prefix="/api/docs", tags=["docs"])  
 if auth_router:
     app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
+app.include_router(feedback.router)
