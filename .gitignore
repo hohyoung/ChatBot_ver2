@@ -21,3 +21,7 @@ backend/data/chroma/
 .DS_Store
 .idea/
 .vscode/
+
+
+backend/data/uploads/
+backend/data/chroma/

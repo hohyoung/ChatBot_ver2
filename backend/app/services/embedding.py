@@ -1,5 +1,5 @@
-from __future__ import annotations
-from typing import Iterable, List
+# backend/app/services/embedding.py
+from typing import List, Optional
 from openai import OpenAI
 from app.config import settings
 
@@ -12,16 +12,27 @@ def _client() -> OpenAI:
     return OpenAI(api_key=settings.openai_api_key)
 
 
+_client_singleton = _client()
+
+
 def embed_texts(
-    texts: Iterable[str], *, model: str | None = None, dimensions: int | None = None
+    texts: List[str],
+    model: Optional[str] = None,
+    dimensions: Optional[int] = None,
 ) -> List[List[float]]:
-    texts_list = [t if isinstance(t, str) else str(t) for t in texts]
-    if not texts_list:
+    """여러 텍스트를 한 번에 임베딩"""
+    if not texts:
         return []
-    client = _client()
-    resp = client.embeddings.create(
+    resp = _client_singleton.embeddings.create(
         model=(model or settings.openai_embed_model),
-        input=texts_list,
+        input=texts,
         **({"dimensions": dimensions} if dimensions else {}),
     )
+    # openai v1: resp.data[*].embedding
     return [d.embedding for d in resp.data]
+
+
+def embed_query(text: str, model: Optional[str] = None) -> List[float]:
+    """질의 한 건 임베딩 → retriever에서 기대하는 인터페이스"""
+    embs = embed_texts([text], model=model)
+    return embs[0] if embs else []

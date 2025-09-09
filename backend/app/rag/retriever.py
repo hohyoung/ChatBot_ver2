@@ -1,100 +1,162 @@
+# backend/app/rag/retriever.py
 from __future__ import annotations
+import logging
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from typing import List, Dict, Any
-from app.services.embedding import embed_texts
-from app.vectorstore.store import query_by_embeddings
-from app.models.schemas import Chunk, ScoredChunk  # 경로 수정!
-from app.services.logging import get_logger
+from app.services.embedding import embed_query
+from app.vectorstore.store import query_by_embedding
+from app.models.schemas import ChunkOut, ScoredChunk
+from app.services.feedback_store import get_boost_map
 
-log = get_logger("app.rag.retriever")
+logger = logging.getLogger("app.rag.retriever")
 
 
-def _similarity_from_distance(d: float | None) -> float | None:
-    if d is None:
-        return None
+def _similarity_from_distance(d: float) -> float:
+    # chroma distance = cosine distance, similarity = 1 - distance (0~1)
     try:
-        d = float(d)
+        sim = 1.0 - float(d)
     except Exception:
-        return None
-    # cosine distance ~ [0, 2] 가정 → 간단 변환
-    return max(0.0, 1.0 - min(1.0, d))
+        sim = 0.0
+    return max(0.0, min(1.0, sim))
+
+
+def _feedback_factor(meta: Dict[str, Any]) -> float:
+    """
+    간단한 확률형 선호도 → 가중치(0.5~1.5).
+    p = (pos+1)/(pos+neg+2), factor = 0.5 + p
+    """
+    pos = int(meta.get("fb_pos", 0) or 0)
+    neg = int(meta.get("fb_neg", 0) or 0)
+    p = (pos + 1.0) / (pos + neg + 2.0)
+    return 0.5 + p  # 0.5~1.5
+
+
+def _tag_boost(meta: Dict[str, Any], query_tags: Optional[Sequence[str]]) -> float:
+    """
+    메타의 tags_json(list) 또는 tags(CSV)에 대해 질의 태그와의 교집합 개수로 1 + 0.05*k 부스트.
+    """
+    if not query_tags:
+        return 1.0
+
+    tags: List[str] = []
+    if "tags_json" in meta and isinstance(meta["tags_json"], str):
+        # sanitize_metadata가 JSON 문자열로 저장함
+        try:
+            import json
+
+            tags = json.loads(meta["tags_json"]) or []
+        except Exception:
+            tags = []
+    elif "tags" in meta and isinstance(meta["tags"], str):
+        tags = [t.strip() for t in meta["tags"].split(",") if t.strip()]
+
+    if not tags:
+        return 1.0
+
+    overlap = len(set(t.lower() for t in tags) & set(t.lower() for t in query_tags))
+    return 1.0 + 0.05 * overlap  # 겹칠수록 소폭 가산
+
+
+def _to_chunk_out(
+    chunk_id: str,
+    content: str,
+    meta: Dict[str, Any],
+) -> ChunkOut:
+    return ChunkOut(
+        chunk_id=chunk_id,
+        content=content,
+        doc_id=meta.get("doc_id"),
+        doc_type=meta.get("doc_type"),
+        doc_title=meta.get("doc_title"),
+        visibility=meta.get("visibility"),
+        # 응답은 list가 기대되므로 tags_json → list 복원 시도, 없으면 CSV 분해
+        tags=_restore_tags_list(meta),
+    )
+
+
+def _restore_tags_list(meta: Dict[str, Any]) -> List[str]:
+    if "tags_json" in meta and isinstance(meta["tags_json"], str):
+        try:
+            import json
+
+            arr = json.loads(meta["tags_json"]) or []
+            if isinstance(arr, list):
+                return [str(x) for x in arr]
+        except Exception:
+            pass
+    if "tags" in meta and isinstance(meta["tags"], str):
+        return [t.strip() for t in meta["tags"].split(",") if t.strip()]
+    return []
 
 
 async def retrieve(
-    question: str, tags: List[str] | None = None, k: int = 5
+    question: str, tags: Optional[List[str]] = None, k: int = 5
 ) -> List[ScoredChunk]:
-    # 1) 질문 임베딩
-    q_vec = embed_texts([question])[0]
+    # 1) 쿼리 임베딩
+    q_vec = embed_query(question)
 
-    # 2) 접근 가능한 문서 필터
-    where: Dict[str, Any] = {"$or": [{"visibility": "org"}, {"visibility": "public"}]}
+    # 2) Chroma 질의
+    raw = query_by_embedding(
+        q_vec,
+        n_results=max(k * 2, 10),
+        where={"visibility": {"$in": ["org", "public"]}},
+    )  # :contentReference[oaicite:3]{index=3}
 
-    # 3) 벡터 검색
-    res = query_by_embeddings(q_vec, n_results=max(10, k), where=where)
+    docs_rows = raw.get("documents", []) or []
+    metas_rows = raw.get("metadatas", []) or []
+    dists_rows = raw.get("distances", []) or []
+    if not docs_rows:
+        return []
 
-    ids = (res.get("ids") or [[]])[0]
-    docs = (res.get("documents") or [[]])[0]
-    metas = (res.get("metadatas") or [[]])[0]
-    dists = (res.get("distances") or [[]])[0]
+    docs = docs_rows[0] if len(docs_rows) > 0 else []
+    metas = metas_rows[0] if len(metas_rows) > 0 else []
+    dists = dists_rows[0] if len(dists_rows) > 0 else []
 
-    out: List[ScoredChunk] = []
+    # [NEW] 2.5) 후보 chunk_id들을 모아서 파일 기반 부스트 맵을 한 번에 조회
+    chunk_ids: List[str] = []
+    for i, meta in enumerate(metas):
+        m = meta or {}
+        cid = (
+            m.get("chunk_id") or f"chunk_{i:04d}"
+        )  # ids 미포함 환경 폴백 :contentReference[oaicite:4]{index=4}
+        chunk_ids.append(cid)
+    boost_map = get_boost_map(
+        chunk_ids, query_tags=tags
+    )  # 파일 기반 factor 조회 :contentReference[oaicite:5]{index=5}
 
-    # ScoredChunk가 실제로 갖고 있는 필드 확인 (pydantic v2)
-    sc_fields = set(ScoredChunk.model_fields.keys())
+    # 3) 재랭크
+    candidates: List[tuple[ScoredChunk, float]] = []
+    for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists)):
+        meta = meta or {}
+        cid = meta.get("chunk_id") or f"chunk_{i:04d}"
 
-    for i, cid in enumerate(ids):
-        meta: Dict[str, Any] = metas[i] if i < len(metas) else {}
-        content = docs[i] if i < len(docs) else ""
-        dist = float(dists[i]) if i < len(dists) and dists[i] is not None else None
+        sim = _similarity_from_distance(
+            dist
+        )  # 0~1 유사도 :contentReference[oaicite:6]{index=6}
+        ff_meta = _feedback_factor(
+            meta
+        )  # 메타 기반 폴백 계산 :contentReference[oaicite:7]{index=7}
+        ff = float(boost_map.get(cid, ff_meta))  # [NEW] 파일기반 factor 우선 적용
+        tb = _tag_boost(
+            meta, tags
+        )  # 태그 교집합 부스트 :contentReference[oaicite:8]{index=8}
+        final = sim * ff * tb
 
-        # tags 문자열 → 리스트 복원
-        raw_tags = meta.get("tags")
-        if isinstance(raw_tags, str):
-            tag_list = [t.strip() for t in raw_tags.split(",") if t.strip()]
-        elif isinstance(raw_tags, list):
-            tag_list = [str(t) for t in raw_tags]
-        else:
-            tag_list = []
+        chunk = _to_chunk_out(chunk_id=cid, content=doc, meta=meta)
+        candidates.append(
+            (ScoredChunk(chunk=chunk, score=final), final)
+        )  # ScoredChunk는 score→final_score 자동 승격 :contentReference[oaicite:9]{index=9}
 
-        chunk = Chunk(
-            chunk_id=cid,
-            doc_id=meta.get("doc_id"),
-            doc_type=meta.get("doc_type"),
-            doc_title=meta.get("doc_title"),
-            tags=tag_list,
-            visibility=meta.get("visibility"),
-            content=content,
+        logger.info(
+            "[retrieve] cid=%s sim=%.4f ff=%.4f tb=%.4f score=%.4f tags=%s doc=%s",
+            cid,
+            sim,
+            ff,
+            tb,
+            final,
+            tags,
+            chunk.doc_title,
         )
 
-        sc_kwargs: Dict[str, Any] = {"chunk": chunk}
-        # 있는 필드만 넣기
-        if "distance" in sc_fields:
-            sc_kwargs["distance"] = dist
-        sim = _similarity_from_distance(dist)
-        if "similarity" in sc_fields:
-            sc_kwargs["similarity"] = sim
-        if "score" in sc_fields:
-            sc_kwargs["score"] = (
-                sim  # score를 쓰는 스키마라면 similarity 개념을 그대로 전달
-            )
-
-        out.append(ScoredChunk(**sc_kwargs))
-
-    # 정렬 기준: score > similarity > (1 - distance)
-    def sort_key(sc: ScoredChunk) -> float:
-        if "score" in sc_fields:
-            v = getattr(sc, "score", None)
-            if isinstance(v, (int, float)):
-                return float(v)
-        if "similarity" in sc_fields:
-            v = getattr(sc, "similarity", None)
-            if isinstance(v, (int, float)):
-                return float(v)
-        if "distance" in sc_fields:
-            v = getattr(sc, "distance", None)
-            if isinstance(v, (int, float)):
-                return 1.0 - max(0.0, min(1.0, float(v)))
-        return 0.0
-
-    out.sort(key=sort_key, reverse=True)
-    return out[:k]
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    return [sc for sc, _ in candidates[:k]]
