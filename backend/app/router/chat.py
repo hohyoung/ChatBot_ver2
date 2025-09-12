@@ -17,7 +17,7 @@ from app.ingest.tagger import tag_query
 router = APIRouter()
 
 
-@router.websocket("/api/chat")
+@router.websocket("/")
 async def chat_ws(ws: WebSocket):
     await ws.accept()
     try:
@@ -57,7 +57,7 @@ async def chat_ws(ws: WebSocket):
 
 
 #디버그용
-@router.post("/api/chat.debug")
+@router.post("/debug")
 async def chat_debug(question: str = Body(..., embed=True)):
     t0 = time.perf_counter()
     try:

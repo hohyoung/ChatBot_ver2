@@ -8,7 +8,7 @@ import app.services.feedback_store as _fs  # 모듈 별칭으로 불러와서 .u
 router = APIRouter()
 log = get_logger(__name__)
 
-@router.post("/api/feedback", response_model=FeedbackResponse)
+@router.post("", response_model=FeedbackResponse)
 def submit_feedback(body: FeedbackRequest):
     """
     요청 스키마(Strict) 기준:

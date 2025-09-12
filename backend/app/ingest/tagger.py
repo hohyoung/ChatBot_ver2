@@ -4,25 +4,17 @@ import asyncio
 import json
 from typing import List
 
-from openai import OpenAI
+from app.services.openai_client import get_client
 from app.config import settings
 from app.services.logging import get_logger
 
 log = get_logger("app.ingest.tagger")
 
 
-def _client() -> OpenAI:
-    # OPENAI_BASE_URL이 있으면 그걸 쓰고(우리가 config에서 /v1 보장),
-    # 없으면 기본 api.openai.com/v1 을 사용
-    if settings.openai_base_url:
-        return OpenAI(
-            api_key=settings.openai_api_key, base_url=settings.openai_base_url
-        )
-    return OpenAI(api_key=settings.openai_api_key)
 
 
 async def _chat(messages, *, temperature: float = 0.2, model: str | None = None):
-    client = _client()
+    client = get_client()
 
     def _call():
         return client.chat.completions.create(

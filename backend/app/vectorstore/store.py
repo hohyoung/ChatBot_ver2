@@ -118,6 +118,7 @@ def upsert_chunks(chunks: Iterable, embeddings: List[List[float]]) -> None:
             "doc_id": getattr(c, "doc_id", None),
             "doc_type": getattr(c, "doc_type", None),
             "doc_title": getattr(c, "doc_title", None),
+            "doc_url": getattr(c, "doc_url", None),
             "visibility": getattr(c, "visibility", None),
             "tags": getattr(c, "tags", None),
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Tuple, Any, Dict, Union
 
-from openai import OpenAI
+from app.services.openai_client import get_client
 from app.config import settings
 from app.services.logging import get_logger
 from app.models.schemas import Chunk, ScoredChunk  # ← 경로 주의!
@@ -10,13 +10,7 @@ from app.models.schemas import Chunk, ScoredChunk  # ← 경로 주의!
 log = get_logger("app.rag.generator")
 
 
-def _client() -> OpenAI:
-    """OpenAI 클라이언트 (프록시/로컬 게이트웨이도 지원)."""
-    if settings.openai_base_url:
-        return OpenAI(
-            api_key=settings.openai_api_key, base_url=settings.openai_base_url
-        )
-    return OpenAI(api_key=settings.openai_api_key)
+
 
 
 def _score_of(sc: Union[ScoredChunk, Chunk]) -> float:
@@ -106,7 +100,7 @@ async def generate_answer(
         f"{context}"
     )
 
-    client = _client()
+    client = get_client()
     # Chat Completions (v1 엔드포인트 사용)
     resp = client.chat.completions.create(
         model=settings.openai_model,

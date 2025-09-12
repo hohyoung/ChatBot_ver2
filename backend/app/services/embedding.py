@@ -1,18 +1,12 @@
 # backend/app/services/embedding.py
 from typing import List, Optional
-from openai import OpenAI
+from app.services.openai_client import get_client
 from app.config import settings
 
 
-def _client() -> OpenAI:
-    if settings.openai_base_url:
-        return OpenAI(
-            api_key=settings.openai_api_key, base_url=settings.openai_base_url
-        )
-    return OpenAI(api_key=settings.openai_api_key)
 
 
-_client_singleton = _client()
+_client_singleton = get_client()
 
 
 def embed_texts(

@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import List, Literal, Optional, Union, Annotated, Dict, Any
-
-from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    ConfigDict,
+    model_validator,
+    AnyUrl,
+)
 
 # -------------------------------------------------------------------
 # 공통: Pydantic 설정 & 유틸
@@ -47,6 +53,10 @@ class Chunk(StrictModel):
     visibility: Literal["private", "org", "public"] = Field(default="org")
     tags: List[str] = Field(default_factory=list, description="정규화된 태그 목록")
     content: str = Field(..., description="청크 텍스트 본문")
+    doc_url: Optional[str] = Field(
+        default=None,
+        description="정적 서빙되는 원본 문서 URL (예: /static/docs/doc_foo.pdf)",
+    )
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -191,6 +201,20 @@ class LoginResponse(StrictModel):
     user: UserPublic
 
 
+class Source(BaseModel):
+    title: str
+    url: AnyUrl  # 나중에 /static/... 링크가 들어갈 자리
+    page: Optional[int] = None  # PDF 페이지 등 필요 없으면 생략 가능
+
+
+class ChatResponse(BaseModel):
+    # 기존 필드들 유지: e.g., message, conversation_id, etc.
+    message: str
+    conversation_id: str
+    # 새 필드 추가
+    sources: List[Source] = Field(default_factory=list)
+
+
 # -------------------------------------------------------------------
 # 피드백 스키마 (히스토리 호환 포함)
 # -------------------------------------------------------------------
@@ -305,4 +329,6 @@ __all__ = [
     "ChatErrorData",
     "FeedbackIn",
     "FeedbackOut",
+    "ChatResponse",
+    "Source",
 ]

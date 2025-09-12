@@ -68,6 +68,7 @@ def _to_chunk_out(
         doc_id=meta.get("doc_id"),
         doc_type=meta.get("doc_type"),
         doc_title=meta.get("doc_title"),
+        doc_url=meta.get("doc_url"),
         visibility=meta.get("visibility"),
         # 응답은 list가 기대되므로 tags_json → list 복원 시도, 없으면 CSV 분해
         tags=_restore_tags_list(meta),
