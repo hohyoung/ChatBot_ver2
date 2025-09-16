@@ -1,0 +1,159 @@
+.authmodal__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    /* 항상 맨 위 */
+}
+
+.authmodal__modal {
+    width: 440px;
+    max-width: 92vw;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .25);
+    overflow: hidden;
+}
+
+.authmodal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.authmodal__header .title {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.authmodal__body {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* 탭 */
+.tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.tab {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 10px;
+    text-align: center;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tab.active {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+}
+
+/* 폼 */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-row.two {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    /* 인풋 + 버튼 */
+    gap: 10px;
+    align-items: end;
+}
+
+.form-row .col.end {
+    display: flex;
+    align-items: end;
+    justify-content: end;
+}
+
+.form label {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.authmodal__body .input {
+    width: 100%;
+    /* 모달 내에서는 가로 꽉 채우기 */
+    min-width: 0;
+    /* grid 내 축소 허용 */
+}
+
+/* 메시지 */
+.help {
+    font-size: 12px;
+    color: #2a7;
+}
+
+.error {
+    font-size: 12px;
+    color: #d55;
+}
+
+/* 액션 버튼 */
+.form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+/* 푸터 */
+.authmodal__footer {
+    border-top: 1px solid #e5e7eb;
+    padding: 10px 14px;
+    color: #6b7280;
+    background: #fafafa;
+}
+
+/* 버튼 기본 */
+.btn {
+    appearance: none;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn:hover {
+    filter: brightness(0.98);
+}
+
+.btn:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.btn-ghost {
+    background: #eef2ff;
+    color: #1f2a62;
+    border-color: #c7d2fe;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+}

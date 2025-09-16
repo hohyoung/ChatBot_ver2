@@ -1,20 +1,48 @@
 // 작은 fetch 래퍼 (에러 처리 포함)
-export async function http(method, url, body, headers = {}) {
-    const init = { method, headers: { ...headers } };
-    if (body instanceof FormData) {
-        init.body = body; // form-data는 헤더 자동
-    } else if (body !== undefined) {
-        init.headers['Content-Type'] = 'application/json; charset=utf-8';
-        init.body = JSON.stringify(body);
+
+// 토큰 메모리/스토리지
+let _token = localStorage.getItem("auth_token") || null;
+export function setAuthToken(token) {
+    _token = token || null;
+    if (_token) localStorage.setItem("auth_token", _token);
+    else localStorage.removeItem("auth_token");
+}
+export function getAuthToken() {
+    return _token;
+}
+
+// API 베이스 (Vite 환경변수 사용 가능)
+const API_BASE = import.meta?.env?.VITE_API_BASE || "";
+
+// 공통 HTTP 호출
+async function http(method, url, body, headers) {
+    const init = {
+        method,
+        headers: {
+            "Accept": "application/json",
+            ...(body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+            ...(headers || {}),
+        },
+    };
+
+    // Authorization 헤더
+    const t = getAuthToken();
+    if (t) init.headers["Authorization"] = `Bearer ${t}`;
+
+    // 바디
+    if (body !== undefined && body !== null) {
+        init.body = body instanceof FormData ? body : JSON.stringify(body);
     }
-    const res = await fetch(url, init);
+
+    const res = await fetch(API_BASE + url, init);
     if (!res.ok) {
-        let text = await res.text().catch(() => '');
+        let text = await res.text().catch(() => "");
+        // 401이면 토큰 제거(선택)
+        if (res.status === 401) setAuthToken(null);
         throw new Error(text || `HTTP ${res.status}`);
     }
-    // 202 등도 JSON을 주므로 그냥 json 시도
     return res.json().catch(() => ({}));
 }
 
-export const get = (url) => http('GET', url);
-export const post = (url, body) => http('POST', url, body);
+export const get = (url, headers) => http("GET", url, undefined, headers);
+export const post = (url, body, headers) => http("POST", url, body, headers);

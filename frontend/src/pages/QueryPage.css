@@ -1,0 +1,47 @@
+.qgrid {
+    display: grid;
+    gap: 18px;
+    min-height: calc(100vh - 56px);
+    grid-template-columns: minmax(520px, 1fr) minmax(420px, .9fr)
+}
+
+.qgrid__left {
+    display: flex;
+    flex-direction: column;
+    gap: 16px
+}
+
+.qgrid__right {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+@media (max-width:1100px) {
+    .qgrid {
+        grid-template-columns: 1fr
+    }
+
+    .qgrid__right .viewer {
+        height: 480px
+    }
+}
+
+/* === Global fix: primary 버튼은 항상 파란 배경/흰 글자 === */
+button.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* .btn(흰 배경)가 나중에 로딩되더라도 .btn.btn-primary가 이김 */
+.btn.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.btn.btn-primary:hover {
+  background: var(--primary-600);
+}

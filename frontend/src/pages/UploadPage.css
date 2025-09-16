@@ -1,0 +1,151 @@
+/* 레이아웃 */
+.upload-page {
+    padding: 20px;
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+.upload-page h2 {
+    margin: 0 0 14px 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+}
+
+/* 섹션 */
+.section {
+    margin-top: 18px;
+}
+
+/* 배너 (상단 안내/오류) */
+.banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    color: #111827;
+    border-radius: 12px;
+    padding: 12px 14px;
+    line-height: 1.45;
+}
+
+.banner.warning {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #9a3412;
+}
+
+.banner.error {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #991b1b;
+}
+
+/* 카드 */
+.card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .04);
+}
+
+/* 드롭존 */
+.dropzone {
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+    background: #f8fafc;
+    transition: background .15s ease, border-color .15s ease;
+    user-select: none;
+}
+
+.dropzone:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.is-disabled {
+    opacity: .6;
+    pointer-events: none;
+}
+
+/* 버튼 */
+.btn {
+    appearance: none;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter .15s ease, transform .02s ease;
+}
+
+.btn:hover {
+    filter: brightness(0.98);
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+}
+
+/* 작은 텍스트 */
+.small {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* 상태 카드 안의 키-값 줄맞춤 */
+.status-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 6px 10px;
+    align-items: start;
+}
+
+.status-grid .key {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.status-grid .val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+        "Courier New", monospace;
+    font-size: 13px;
+    color: #111827;
+    word-break: break-all;
+}
+
+
+/* === Global fix: primary 버튼은 항상 파란 배경/흰 글자 === */
+button.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* .btn(흰 배경)가 나중에 로딩되더라도 .btn.btn-primary가 이김 */
+.btn.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.btn.btn-primary:hover {
+  background: var(--primary-600);
+}
