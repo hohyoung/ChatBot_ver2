@@ -12,6 +12,9 @@ export default function QueryPage() {
     const [connecting, setConnecting] = useState(false);
     const [lastQ, setLastQ] = useState('');
     const wsRef = useRef(null);
+    const handleSelectSource = (src, idx) => {
+        setSelected(idx);     // 인덱스만 저장
+    };
 
     useEffect(() => {
         if (!sources?.length) { setSelected(null); return; }
@@ -89,7 +92,7 @@ export default function QueryPage() {
                     answer={answer}
                     sources={sources}
                     selectedIndex={selected}
-                    onSelectSource={setSelected}
+                    onSelectSource={handleSelectSource}
                     onAsk={ask}
                     onFeedback={vote}
                 />

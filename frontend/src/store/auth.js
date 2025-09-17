@@ -1,5 +1,5 @@
-// src/store/auth.js
-import { api, setAuthToken, clearAuthToken, getAuthToken } from "../api/http";
+// frontend/src/store/auth.js
+import { api, setAuthToken, clearAuthToken, getAuthToken } from "../api/http.js";
 
 export async function login(username_or_email, password) {
     const res = await api.login(username_or_email, password);

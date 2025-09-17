@@ -1,109 +1,294 @@
-.chat {
-    display: flex;
-    flex-direction: column;
-    gap: 16px
+/* ChatPanel.css — 밝은 톤 / 2행 1열(세로 스택) 레이아웃 */
+
+/* 색/간격 변수: 전체 앱 톤(화이트 카드)과 맞춤 */
+.panel {
+    --surface: #ffffff;
+    --surface-subtle: #fafbfc;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    /* 버튼/포커스 블루 */
+    --accent-2: #10b981;
+    /* 성공/OK 그린 */
+    --danger: #ef4444;
+    --radius: 12px;
+    --gap: 14px;
+    --shadow: 0 6px 16px rgba(17, 24, 39, .06);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", "Nanum Gothic", sans-serif;
+    color: var(--text);
 }
 
-.chat__box {
+/* ===== 레이아웃: 2행 1열(세로 스택) ===== */
+.panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    /* ⬅ 단일 컬럼 */
+    grid-auto-rows: auto;
+    gap: var(--gap);
+    align-items: start;
+    min-height: 0;
+}
+
+/* 두 섹션을 카드처럼 */
+.panel__left,
+.panel__right {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+/* ===== 질의(입력/답변) ===== */
+.ask {
+    padding: calc(var(--gap) + 2px);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-subtle);
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
+}
+
+.ask__input {
+    width: 100%;
+    height: 112px;
+    resize: vertical;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    outline: none;
+    line-height: 1.45;
+}
+
+.ask__input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.ask__actions {
+    margin-top: 10px;
     display: flex;
     gap: 10px;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
-    padding: 12px;
-    box-shadow: 0 6px 20px rgba(17, 24, 39, .08)
+    justify-content: flex-end;
 }
 
-.chat__input {
-    flex: 1;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 12px 14px;
-    outline: none
-}
-
-.chat__input:focus {
-    border-color: #c7d2fe;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, .12)
-}
-
-.chat__hint {
-    font-size: 12px;
-    color: #6b7280
-}
-
-.chat__section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px
-}
-
-.chat__answer {
-    min-height: 140px;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 14px;
-    white-space: pre-wrap;
-    box-shadow: 0 6px 20px rgba(17, 24, 39, .08)
-}
-
-.chat__list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px
-}
-
-.chat__item {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 10px 12px;
-    cursor: pointer
-}
-
-.chat__item.is-active {
-    outline: 2px solid #93c5fd
-}
-
-.chat__title {
-    font-weight: 600
-}
-
-.chat__meta {
-    font-size: 12px;
-    color: #6b7280
-}
-
-.chat__actions {
-    margin-top: 6px;
-    display: flex;
-    gap: 8px
-}
-
-.btn {
-    border: 0;
-    border-radius: 12px;
-    padding: 10px 14px;
-    cursor: pointer
-}
-
-.btn-ghost {
-    background: #eef2ff;
-    color: #1f2a62
-}
-
-.btn-primary {
-    background: #2563eb;
+/* 버튼: 기존 앱과 충돌 없게 .panel 범위로 제한 */
+.panel .btn {
+    appearance: none;
+    border: 1px solid var(--accent);
+    background: var(--accent);
     color: #fff;
-    box-shadow: 0 6px 20px rgba(17, 24, 39, .08)
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform .05s ease, filter .15s ease, background .15s ease, border-color .15s ease;
 }
 
-.btn-primary:hover {
-    background: #1d4ed8
-}
-
-.btn:disabled {
+.panel .btn:disabled {
     opacity: .6;
-    cursor: not-allowed
+    cursor: not-allowed;
+}
+
+.panel .btn:active {
+    transform: translateY(1px);
+}
+
+.panel .btn.btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+}
+
+.panel .btn.btn-ghost:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* 답변 */
+.answer {
+    flex: 1;
+    min-height: 0;
+    padding: var(--gap);
+    display: flex;
+    flex-direction: column;
+}
+
+.answer__text {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    margin: 0;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+}
+
+.answer__placeholder {
+    color: var(--muted);
+    padding: 10px 2px;
+    font-style: italic;
+}
+
+/* ===== 근거(리스트) — 두 번째 카드 ===== */
+.sources {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.sources__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-subtle);
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
+}
+
+.sources__header .title {
+    font-weight: 700;
+    letter-spacing: .2px;
+}
+
+.sources__header .count {
+    color: var(--muted);
+    font-size: 12px;
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fff;
+}
+
+.sources__body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.sources__empty {
+    padding: 16px;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+/* 근거 카드 */
+.source {
+    display: grid;
+    grid-template-rows: auto auto auto;
+    gap: 8px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.source:hover {
+    border-color: #cfd8e3;
+    box-shadow: 0 6px 16px rgba(17, 24, 39, .06);
+    background: #fff;
+}
+
+.source--active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.source__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.source__title {
+    font-weight: 700;
+    letter-spacing: .2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source__meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+/* 배지 */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: #fff;
+    white-space: nowrap;
+}
+
+.pill--ok {
+    color: var(--accent-2);
+    border-color: rgba(16, 185, 129, .35);
+    background: rgba(16, 185, 129, .08);
+}
+
+.pill--muted {
+    opacity: .75;
+}
+
+/* 스니펫 */
+.source__snippet {
+    color: #374151;
+    line-height: 1.55;
+    max-height: 7.5em;
+    /* 약 5줄 */
+    overflow: hidden;
+    word-break: break-word;
+}
+
+/* 푸터 */
+.source__footer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.source__path {
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source__actions {
+    display: inline-flex;
+    gap: 6px;
+}
+
+/* 반응형(모바일에서도 그대로 단일 컬럼이라 특별 조정 불필요) */
+@media (max-width: 980px) {
+    .panel {
+        gap: 12px;
+    }
 }
