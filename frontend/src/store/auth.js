@@ -1,39 +1,35 @@
-// frontend/src/store/auth.js
-import { api, setAuthToken, clearAuthToken, getAuthToken } from "../api/http.js";
+// src/store/auth.js
+import { authApi, setAuthToken, clearAuthToken } from "../api/http";
 
-export async function login(username_or_email, password) {
-    const res = await api.login(username_or_email, password);
+export async function login(idOrEmail, password) {
+    const res = await authApi.login({ username: idOrEmail, password });
     if (res?.access_token) {
-        setAuthToken(res.access_token);
+        setAuthToken(res.access_token, { remember: true });
         return true;
     }
     return false;
+
 }
 
-export async function register({ username, password, password_confirm }) {
-    const res = await api.register({ username, password, password_confirm });
+export async function register({ name, username, password }) {
+    const res = await authApi.register({ name, username, password });
     if (res?.access_token) {
-        setAuthToken(res.access_token);
+        setAuthToken(res.access_token, { remember: true });
         return true;
     }
     return false;
-}
-
-export async function me() {
-    const token = getAuthToken();
-    if (!token) return null;
-    try {
-        return await api.me();
-    } catch {
-        clearAuthToken();
-        return null;
-    }
-}
-
-export function logout() {
-    clearAuthToken();
 }
 
 export async function checkUsername(username) {
-    return api.checkUsername(username); // { available: boolean }
+    // GET /api/auth/check-username?username=...
+    return await authApi.checkUsername(username);
+}
+
+export async function me() {
+    return await authApi.me();
+}
+
+export async function logout() {
+    try { await authApi.logout(); } finally { clearAuthToken(); }
+    return true;
 }

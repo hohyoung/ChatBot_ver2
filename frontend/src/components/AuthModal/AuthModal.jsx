@@ -1,6 +1,7 @@
+// src/components/auth/AuthModal.jsx
 import React, { useState } from "react";
 import "./AuthModal.css";
-import { login, register, checkUsername, me } from "../../store/auth";
+import { authApi, setAuthToken } from "../../api/http";
 
 export default function AuthModal({ open, onClose, onLoggedIn }) {
     const [tab, setTab] = useState("login"); // 'login' | 'signup'
@@ -8,7 +9,7 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
     const [err, setErr] = useState("");
 
     // login
-    const [idOrEmail, setIdOrEmail] = useState("");
+    const [usernameOrEmail, setUsernameOrEmail] = useState("");
     const [pw, setPw] = useState("");
 
     // signup
@@ -16,6 +17,7 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
     const [pw1, setPw1] = useState("");
     const [pw2, setPw2] = useState("");
     const [nameChecked, setNameChecked] = useState(null); // true/false
+    const [name, setName] = useState("");
 
     if (!open) return null;
 
@@ -29,12 +31,15 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
         setLoading(true);
         setErr("");
         try {
-            const ok = await login(idOrEmail, pw);
-            if (!ok) {
+            // 현재 백엔드는 username 로그인만 지원
+            const res = await authApi.login({ username: usernameOrEmail.trim(), password: pw });
+            if (!res?.access_token) {
                 setErr("아이디 또는 비밀번호가 올바르지 않습니다.");
                 return;
             }
-            await me();
+            setAuthToken(res.access_token, { remember: true });
+            await authApi.me(); // 토큰 확인 겸 사용자 정보 초기화
+            window.dispatchEvent(new Event("auth:changed"));
             onLoggedIn?.();
             onClose?.();
         } catch (e2) {
@@ -46,11 +51,11 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
 
     async function onCheckUsername() {
         setErr("");
-        if (username.length < 3) {
+        if ((username || "").trim().length < 3) {
             setErr("아이디는 3자 이상이어야 합니다.");
             return;
         }
-        const { available } = await checkUsername(username);
+        const { available } = await authApi.checkUsername(username.trim());
         setNameChecked(!!available);
         if (!available) setErr("이미 사용 중인 아이디입니다.");
     }
@@ -59,12 +64,20 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
         e?.preventDefault();
         setLoading(true);
         setErr("");
+
         try {
+            const trimmedName = (name || "").trim();
+            const trimmedUsername = (username || "").trim();
+
+            if (!trimmedName) {
+                setErr("이름을 입력하세요.");
+                return;
+            }
             if (pw1 !== pw2) {
                 setErr("비밀번호 확인이 일치하지 않습니다.");
                 return;
             }
-            if (pw1.length < 8) {
+            if ((pw1 || "").length < 8) {
                 setErr("비밀번호는 8자 이상이어야 합니다.");
                 return;
             }
@@ -72,16 +85,20 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                 setErr("아이디 중복 확인을 먼저 해주세요.");
                 return;
             }
-            const ok = await register({
-                username,
+
+            // 이메일 없이 회원가입 허용
+            const res = await authApi.register({
+                name: trimmedName,
+                username: trimmedUsername,
                 password: pw1,
-                password_confirm: pw2,
             });
-            if (!ok) {
+            if (!res?.access_token) {
                 setErr("회원가입 실패");
                 return;
             }
-            await me();
+            setAuthToken(res.access_token, { remember: true });
+            await authApi.me();
+            window.dispatchEvent(new Event("auth:changed"));
             onLoggedIn?.();
             onClose?.();
         } catch (e2) {
@@ -122,12 +139,12 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                     {tab === "login" ? (
                         <form className="form" onSubmit={handleLogin}>
                             <div className="form-row">
-                                <label>아이디 또는 이메일</label>
+                                <label>아이디</label>
                                 <input
                                     className="input"
-                                    placeholder="username 또는 email"
-                                    value={idOrEmail}
-                                    onChange={(e) => setIdOrEmail(e.target.value)}
+                                    placeholder="username"
+                                    value={usernameOrEmail}
+                                    onChange={(e) => setUsernameOrEmail(e.target.value)}
                                 />
                             </div>
 
@@ -172,7 +189,6 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                                         }}
                                         placeholder="아이디"
                                     />
-                                    {/* 중복확인 결과 문구 — 입력창 바로 아래 */}
                                     {nameChecked === true && (
                                         <div className="help">사용 가능한 아이디입니다.</div>
                                     )}
@@ -190,6 +206,18 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                                         중복확인
                                     </button>
                                 </div>
+                            </div>
+
+                            <div className="form-row">
+                                <label htmlFor="name">이름</label>
+                                <input
+                                    id="name"
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="홍길동"
+                                    autoComplete="name"
+                                />
                             </div>
 
                             <div className="form-row">
@@ -232,7 +260,8 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                 </div>
 
                 <div className="authmodal__footer small">
-                    가입 후 보안등급은 기본 3등급으로 설정됩니다.
+                    지금은 이메일 없이 가입되며, <b>아이디 중복확인만</b>으로 진행됩니다.
+                    추후 이메일 인증을 추가할 예정입니다.
                 </div>
             </div>
         </div>
