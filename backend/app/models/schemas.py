@@ -9,6 +9,7 @@ from pydantic import (
     ConfigDict,
     model_validator,
     AnyUrl,
+    EmailStr,
 )
 
 # -------------------------------------------------------------------
@@ -58,6 +59,23 @@ class Chunk(StrictModel):
         description="정적 서빙되는 원본 문서 URL (예: /static/docs/doc_foo.pdf)",
     )
 
+    doc_relpath: Optional[str] = Field(
+        default=None,
+        description="storage/docs 하위 상대 경로 (예: 'public/foo.pdf' 또는 'private/bar.pdf')",
+    )
+
+    # ✅ 질의와 가장 유사한 문장(미리보기 보조)
+    focus_sentence: Optional[str] = Field(
+        default=None, description="질의와 가장 관련 높은 문장(미리보기 보조용)"
+    )
+
+    owner_id: Optional[int] = Field(default=None, description="업로더 사용자 ID")
+    owner_username: Optional[str] = Field(default=None, description="업로더 계정명")
+
+    # PDF 기준 시작/끝 페이지(1-base). PDF가 아니면 None.
+    page_start: Optional[int] = Field(default=None, description="시작 페이지(1-base)")
+    page_end: Optional[int] = Field(default=None, description="끝 페이지(1-base)")
+
     @field_validator("tags", mode="before")
     @classmethod
     def _v_tags(cls, v):
@@ -80,20 +98,13 @@ ChunkOut = Chunk
 
 
 class ScoredChunk(StrictModel):
-    """검색/재랭킹 단계에서 쓰는 래퍼: 원본 청크 + 점수들.
-
-    - similarity  : 코사인 유사도 (= 1 - distance), 0~1
-    - distance    : 코사인 거리(Chroma)
-    - final_score : 태그/피드백 반영 최종 점수(정렬 기준)
-    - score       : [Deprecated] 과거 이름(입력 호환만 허용)
-    - reasons     : 디버깅용 가중 근거 문자열
-    """
+    """검색/재랭킹 단계에서 쓰는 래퍼: 원본 청크 + 점수들."""
 
     chunk: Chunk
     similarity: Optional[float] = Field(default=None)
     distance: Optional[float] = Field(default=None)
     final_score: Optional[float] = Field(default=None)
-    # ↓ 하위호환: 외부에서 score 키를 보내도 받기만 하고 final_score로 올린다
+    # ↓ 하위호환: score 입력 들어오면 final_score로 승격
     score: Optional[float] = Field(
         default=None, description="Deprecated; use final_score"
     )
@@ -117,12 +128,10 @@ class ChatRequest(StrictModel):
 
 
 class ChatAnswer(StrictModel):
-    """최종 답변 페이로드."""
-
     answer: str
     chunks: List[Chunk] = Field(default_factory=list)
 
-    # 디버깅/추적용 필드(라우터 구현과 로그에 맞춰 optional 로 허용)
+    # 디버깅/추적용
     answer_id: Optional[str] = None
     used_tags: List[str] = Field(default_factory=list)
     latency_ms: Optional[int] = None
@@ -133,8 +142,6 @@ class ChatAnswer(StrictModel):
 
 
 class ChatDebugResponse(StrictModel):
-    """디버깅 엔드포인트(/api/chat.debug)에서 사용."""
-
     question: str
     answer: str
     used_chunks: List[Chunk] = Field(default_factory=list)
@@ -144,7 +151,6 @@ class ChatDebugResponse(StrictModel):
     version: str = Field(default=SCHEMA_VERSION)
 
 
-# (선택) 스트리밍 이벤트 스키마
 class ChatTokenEvent(StrictModel):
     type: Literal["token"] = "token"
     token: str
@@ -167,7 +173,7 @@ ChatEvent = Annotated[
 
 
 # -------------------------------------------------------------------
-# 업로드/잡 상태/인증
+# 업로드/잡 상태/인증(레거시 섹션: 필요시 유지)
 # -------------------------------------------------------------------
 
 
@@ -183,7 +189,6 @@ class IngestJobStatus(StrictModel):
     errors: List[str] = Field(default_factory=list)
 
 
-# 인증 (프로토타입)
 class LoginRequest(StrictModel):
     email: str
     password: str
@@ -203,47 +208,30 @@ class LoginResponse(StrictModel):
 
 class Source(BaseModel):
     title: str
-    url: AnyUrl  # 나중에 /static/... 링크가 들어갈 자리
-    page: Optional[int] = None  # PDF 페이지 등 필요 없으면 생략 가능
+    url: AnyUrl
+    page: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
-    # 기존 필드들 유지: e.g., message, conversation_id, etc.
     message: str
     conversation_id: str
-    # 새 필드 추가
     sources: List[Source] = Field(default_factory=list)
 
 
 # -------------------------------------------------------------------
-# 피드백 스키마 (히스토리 호환 포함)
+# 피드백
 # -------------------------------------------------------------------
 
 
 class FeedbackRequest(StrictModel):
-    """/api/feedback 입력.
-
-    - vote: "up" | "down"
-    - query: 사용자가 평가를 남긴 당시 질의(선택)
-    - tag_context: 페이지/탭 등 전역 태그 컨텍스트(선택)
-
-    하위호환:
-    - signal: (deprecated) "up"|"down" 이 오면 vote로 승격
-    - weight: (deprecated) 가중치 수치(정규화는 서비스 계층에서)
-    """
-
     chunk_id: str
     vote: Optional[Literal["up", "down"]] = None
     query: Optional[str] = None
     tag_context: List[str] = Field(default_factory=list)
-
-    # ↓ 하위호환 입력 허용
     signal: Optional[Literal["up", "down"]] = Field(
-        default=None, description="Deprecated; use vote"
+        default=None, description="Deprecated"
     )
-    weight: Optional[float] = Field(
-        default=None, description="Deprecated; will be ignored or normalized"
-    )
+    weight: Optional[float] = Field(default=None, description="Deprecated")
 
     @field_validator("tag_context", mode="before")
     @classmethod
@@ -257,15 +245,12 @@ class FeedbackRequest(StrictModel):
     @model_validator(mode="before")
     @classmethod
     def _compat_signal_to_vote(cls, data):
-        # vote가 비어 있고 signal이 있으면 vote로 승격
         if isinstance(data, dict) and (not data.get("vote")) and data.get("signal"):
             data["vote"] = data["signal"]
         return data
 
 
 class FeedbackUpdated(StrictModel):
-    """응답의 보조 정보(선택). 실제 값은 서비스 계층에서 구성."""
-
     chunk_id: str
     delta: Optional[float] = None
     new_boost: Optional[float] = None
@@ -273,16 +258,9 @@ class FeedbackUpdated(StrictModel):
 
 
 class FeedbackResponse(StrictModel):
-    """/api/feedback 응답. 기존 OkResponse와 호환되도록 ok만으로도 유효."""
-
     ok: bool = True
     updated: Optional[FeedbackUpdated] = None
     error: Optional[str] = None
-
-
-# -------------------------------------------------------------------
-# 범용 응답
-# -------------------------------------------------------------------
 
 
 class OkResponse(StrictModel):
@@ -294,13 +272,66 @@ class ErrorResponse(StrictModel):
     error: str
 
 
-# --- backward-compat aliases (legacy names used by older router/chat code) ---
-ChatFinalData = ChatAnswer  # old -> new
-ChatErrorData = ErrorResponse  # old -> new
+ChatFinalData = ChatAnswer  # alias
+ChatErrorData = ErrorResponse  # alias
+FeedbackIn = FeedbackRequest  # alias
+FeedbackOut = FeedbackResponse  # alias
 
-# --- backward-compat aliases (legacy names used by older feedback router) ---
-FeedbackIn = FeedbackRequest  # old -> new
-FeedbackOut = FeedbackResponse  # old -> new
+
+# -------------------------------------------------------------------
+# 유저 인증 스키마 (실사용)
+# -------------------------------------------------------------------
+
+_FROM_ORM = ConfigDict(from_attributes=True)
+
+
+class UserOut(BaseModel):
+    model_config = _FROM_ORM
+    id: int
+    username: str
+    # ✅ 지금은 이메일 검증/인증을 사용하지 않으므로 선택값으로
+    email: Optional[EmailStr] = None
+    security_level: int
+    is_active: bool = True
+
+
+class UserCreateExternal(BaseModel):
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_]{3,50}$")
+    # ✅ 나중에 이메일을 붙일 때 EmailStr로 바꾸기 쉬우니 필드 유지(지금은 선택값)
+    email: Optional[EmailStr] = None
+    password: str = Field(min_length=8, max_length=128)
+    password_confirm: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+
+class LoginIn(BaseModel):
+    # 프론트는 지금 username으로만 로그인
+    username: str
+    password: str
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AuthUser(BaseModel):
+    model_config = _FROM_ORM
+    id: int
+    username: str
+    # ✅ 이메일 검증/인증 도입 전까지 optional
+    email: Optional[EmailStr] = None
+    security_level: int
+
+
+class InternalSignupRequest(BaseModel):
+    email: EmailStr  # @soosan.co.kr 전용 가입은 추후 도입 시 사용
+
+
+class InternalSignupVerify(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+    username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_]{3,50}$")
+    password: str = Field(min_length=8, max_length=128)
 
 
 __all__ = [
@@ -331,4 +362,11 @@ __all__ = [
     "FeedbackOut",
     "ChatResponse",
     "Source",
+    "UserOut",
+    "UserCreateExternal",
+    "LoginIn",
+    "TokenOut",
+    "AuthUser",
+    "InternalSignupRequest",
+    "InternalSignupVerify",
 ]

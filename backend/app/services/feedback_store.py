@@ -134,3 +134,22 @@ def get_boost_map(
     if out:
         log.info("[feedback] boost_map: %s", {k: round(v, 4) for k, v in out.items()})
     return out
+
+
+def delete_many(chunk_ids: List[str]) -> int:
+    """
+    청크 ID 배열에 해당하는 피드백 JSON을 일괄 삭제.
+    반환: 삭제된 파일 수
+    """
+    n = 0
+    for cid in chunk_ids:
+        p = _file_path(cid)
+        try:
+            if p.exists():
+                p.unlink()
+                n += 1
+        except Exception as e:
+            log.warning("feedback delete fail cid=%s err=%s", cid, e)
+    if n:
+        log.info("[feedback] deleted %d files", n)
+    return n
