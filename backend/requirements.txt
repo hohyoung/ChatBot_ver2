@@ -9,3 +9,8 @@ passlib[bcrypt]
 pypdf
 python-docx
 beautifulsoup4
+sqlalchemy>=2.0
+passlib[bcrypt]>=1.7
+email-validator>=2.1
+nginx
+pyodbc

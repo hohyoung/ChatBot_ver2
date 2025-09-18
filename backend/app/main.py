@@ -5,16 +5,16 @@ from app.services.logging import setup_logging
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+# ⬇️ 라우터 “모듈”이 아니라 “router 객체”를 직접 임포트
+from app.router.chat import router as chat_router
+from app.router.docs import router as docs_router
+from app.router.feedback import router as feedback_router
+from app.router.auth import router as auth_router  # /api/auth/*
+from app.router.admin import router as admin_router
 
-from app.router import chat
-from app.router import docs
-from app.router import feedback
 
-try:
-    from app.router import auth as auth_router
-except Exception:
-    auth_router = None
-
+DOCS_DIR = Path("storage/docs")
+(DOCS_DIR / "public").mkdir(parents=True, exist_ok=True)
 
 setup_logging()
 
@@ -60,16 +60,15 @@ def root():
 
 
 # 정적 문서 서빙(원본 파일 공개 경로)
-DOCS_DIR = Path("storage/docs")
-DOCS_DIR.mkdir(parents=True, exist_ok=True)
+PUBLIC_DOCS_DIR = Path("storage/docs/public")
+PUBLIC_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 # /static/docs/<파일명> 으로 접근 가능
-app.mount("/static/docs", StaticFiles(directory=str(DOCS_DIR)), name="docs")
-
+app.mount("/static/docs", StaticFiles(directory=str(PUBLIC_DOCS_DIR)), name="docs")
 
 # 라우터 등록
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(docs.router, prefix="/api/docs", tags=["docs"])
-if auth_router:
-    app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
-app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
+app.include_router(docs_router, prefix="/api/docs", tags=["docs"])
+app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
