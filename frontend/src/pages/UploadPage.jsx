@@ -58,13 +58,13 @@ export default function UploadPage() {
         form.append("visibility", "public");
 
         try {
-            const res = await post("/api/docs/upload", form); // { job_id, accepted, skipped }
+            const res = await post("/docs/upload", form); // { job_id, accepted, skipped }
             setJob(res);
 
             if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(async () => {
                 try {
-                    const st = await get(`/api/docs/${res.job_id}/status`);
+                    const st = await get(`/docs/${res.job_id}/status`);
                     setStatus(st);
                     if (st?.status === "done" || st?.status === "error") {
                         clearInterval(timerRef.current);

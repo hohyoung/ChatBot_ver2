@@ -6,6 +6,7 @@ frontend/dist
 
 # Python / Backend
 backend/.venv
+backend/data
 __pycache__/
 *.pyc
 *.pyo
@@ -22,6 +23,8 @@ backend/data/chroma/
 .idea/
 .vscode/
 
+scripts
+*.sqlite3
 
 backend/data/uploads/
 backend/data/chroma/

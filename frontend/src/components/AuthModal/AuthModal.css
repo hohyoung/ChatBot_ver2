@@ -1,3 +1,4 @@
+/* src/components/auth/AuthModal.css */
 .authmodal__backdrop {
     position: fixed;
     inset: 0;
@@ -6,7 +7,6 @@
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    /* 항상 맨 위 */
 }
 
 .authmodal__modal {
@@ -38,7 +38,6 @@
     gap: 12px;
 }
 
-/* 탭 */
 .tabs {
     display: flex;
     gap: 8px;
@@ -60,7 +59,6 @@
     border-color: #c7d2fe;
 }
 
-/* 폼 */
 .form {
     display: flex;
     flex-direction: column;
@@ -76,7 +74,6 @@
 .form-row.two {
     display: grid;
     grid-template-columns: 1fr 120px;
-    /* 인풋 + 버튼 */
     gap: 10px;
     align-items: end;
 }
@@ -94,12 +91,9 @@
 
 .authmodal__body .input {
     width: 100%;
-    /* 모달 내에서는 가로 꽉 채우기 */
     min-width: 0;
-    /* grid 내 축소 허용 */
 }
 
-/* 메시지 */
 .help {
     font-size: 12px;
     color: #2a7;
@@ -110,7 +104,6 @@
     color: #d55;
 }
 
-/* 액션 버튼 */
 .form-actions {
     display: flex;
     gap: 10px;
@@ -118,7 +111,6 @@
     margin-top: 6px;
 }
 
-/* 푸터 */
 .authmodal__footer {
     border-top: 1px solid #e5e7eb;
     padding: 10px 14px;
@@ -126,7 +118,6 @@
     background: #fafafa;
 }
 
-/* 버튼 기본 */
 .btn {
     appearance: none;
     border: 1px solid #e5e7eb;
@@ -156,4 +147,47 @@
     background: #3b82f6;
     border-color: #3b82f6;
     color: #fff;
+}
+
+.form-row input,
+.form-row select,
+.form-row textarea,
+.authmodal__body .input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.form-row input::placeholder {
+    color: #9ca3af;
+}
+
+.form-row input:focus,
+.form-row select:focus,
+.form-row textarea:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+
+.form-row .help,
+.form-row .error {
+    margin-top: 4px;
+}
+
+.form-row.two .col.end label {
+    visibility: hidden;
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.form-row.two .col.end .btn {
+    min-height: 40px;
 }

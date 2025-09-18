@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import "./Header.css";
 import AuthModal from "../AuthModal/AuthModal.jsx";
 import { me, logout } from "../../store/auth";
+import { getAuthToken } from "../../api/http";
 
 export default function Header() {
     const [open, setOpen] = useState(false);
@@ -9,11 +10,10 @@ export default function Header() {
 
     const refreshUser = async () => {
         try {
+            if (!getAuthToken()) { setUser(null); return; }
             const info = await me();
             setUser(info);
-        } catch {
-            setUser(null);
-        }
+        } catch { setUser(null); }
     };
 
     useEffect(() => { refreshUser(); }, []);

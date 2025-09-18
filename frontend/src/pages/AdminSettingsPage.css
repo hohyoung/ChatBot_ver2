@@ -1,0 +1,168 @@
+/* 기본 컨테이너 */
+.admin {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin__header h1 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.admin__desc {
+    color: #6b7280;
+}
+
+/* 상단 카드 스위처 */
+.admin__switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.admin__card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: left;
+    background: #fff;
+    cursor: pointer;
+}
+
+.admin__card:hover {
+    border-color: #cbd5e1;
+}
+
+.admin__card.is-active {
+    border-color: var(--primary, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, .15) inset;
+}
+
+.admin__card_ttl {
+    font-weight: 600;
+}
+
+.admin__card_desc {
+    color: #6b7280;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+/* 패널 공통 */
+.admin__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.admin__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.admin__toolbar_l,
+.admin__toolbar_r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin__hint {
+    color: #6b7280;
+}
+
+.admin__err {
+    color: #b91c1c;
+}
+
+.admin__empty {
+    padding: 24px;
+    background: #f9fafb;
+    border: 1px dashed #e5e7eb;
+    border-radius: 8px;
+}
+
+/* 테이블 */
+.admin__tablewrap {
+    overflow: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+.admin__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.admin__table th,
+.admin__table td {
+    border-bottom: 1px solid #f1f5f9;
+    padding: 10px 12px;
+    vertical-align: middle;
+}
+
+.admin__table th {
+    background: #f8fafc;
+    text-align: left;
+    color: #475569;
+}
+
+.admin__title {
+    font-weight: 600;
+}
+
+.admin__sub {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* 입력/선택 */
+.admin__input,
+.admin__select {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    width: 100%;
+}
+
+.admin__input:focus,
+.admin__select:focus {
+    outline: none;
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 3px rgba(148, 163, 184, .2);
+}
+
+/* 버튼(프로젝트 공통 클래스 활용 가정) */
+.btn {
+    border: 1px solid #d1d5db;
+    background: #fff;
+    border-radius: 8px;
+    height: 34px;
+    padding: 0 12px;
+    cursor: pointer;
+}
+
+.btn:hover {
+    background: #f8fafc;
+}
+
+.btn-primary {
+    background: var(--primary, #2563eb);
+    color: #fff;
+    border-color: var(--primary, #2563eb);
+}
+
+.btn-primary:hover {
+    filter: brightness(0.95);
+}
+
+/* 반응형 */
+@media (max-width: 900px) {
+    .admin__switcher {
+        grid-template-columns: 1fr;
+    }
+}
