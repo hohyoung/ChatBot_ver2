@@ -30,6 +30,10 @@ export async function me() {
 }
 
 export async function logout() {
-    try { await authApi.logout(); } finally { clearAuthToken(); }
+    // 1) 즉시 클라이언트 상태 해제
+    clearAuthToken();
+    try { window.dispatchEvent(new Event("auth:changed")); } catch { }
+    // 2) 서버 세션 정리(실패해도 무시)
+    try { await authApi.logout(); } catch { }
     return true;
 }

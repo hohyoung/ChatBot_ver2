@@ -188,7 +188,7 @@ async def retrieve(
         final = sim * ff * tb
 
         chunk = _to_chunk_out(chunk_id=cid, content=doc, meta=meta)
-        chunk.focus_sentence = _pick_focus_sentence(question, chunk.content)
+        #chunk.focus_sentence = _pick_focus_sentence(question, chunk.content)
         candidates.append(
             (ScoredChunk(chunk=chunk, score=final), final)
         )  # ScoredChunk는 score→final_score 자동 승격 :contentReference[oaicite:9]{index=9}
@@ -208,30 +208,30 @@ async def retrieve(
     return [sc for sc, _ in candidates[:k]]
 
 
-_SENT_SPLIT = re.compile(r"(?<=[\.\?\!。…]|[\n\r])\s+")
+#_SENT_SPLIT = re.compile(r"(?<=[\.\?\!。…]|[\n\r])\s+")
 
 
-def _pick_focus_sentence(question: str, content: str) -> str | None:
-    """청크 본문을 문장 단위로 나눠, 질의-문장 임베딩 코사인 유사도 최대 문장을 선택."""
-    sents = [s.strip() for s in _SENT_SPLIT.split(content) if s and s.strip()]
-    if not sents:
-        return None
-    # 문장 수가 너무 많으면 비용 줄이기 위해 앞뒤 위주로 샘플링
-    if len(sents) > 16:
-        head, tail = sents[:8], sents[-8:]
-        sents = head + tail
+# def _pick_focus_sentence(question: str, content: str) -> str | None:
+#     """청크 본문을 문장 단위로 나눠, 질의-문장 임베딩 코사인 유사도 최대 문장을 선택."""
+#     sents = [s.strip() for s in _SENT_SPLIT.split(content) if s and s.strip()]
+#     if not sents:
+#         return None
+#     # 문장 수가 너무 많으면 비용 줄이기 위해 앞뒤 위주로 샘플링
+#     if len(sents) > 16:
+#         head, tail = sents[:8], sents[-8:]
+#         sents = head + tail
 
-    qv = embed_query(question)  # 1회
-    sv = embed_texts(sents)  # 문장별 임베딩
+#     qv = embed_query(question)  # 1회
+#     sv = embed_texts(sents)  # 문장별 임베딩
 
-    def cos(a, b):
-        na = math.sqrt(sum(x * x for x in a)) or 1e-9
-        nb = math.sqrt(sum(y * y for y in b)) or 1e-9
-        return sum(x * y for x, y in zip(a, b)) / (na * nb)
+#     def cos(a, b):
+#         na = math.sqrt(sum(x * x for x in a)) or 1e-9
+#         nb = math.sqrt(sum(y * y for y in b)) or 1e-9
+#         return sum(x * y for x, y in zip(a, b)) / (na * nb)
 
-    best_i, best = 0, -1.0
-    for i, v in enumerate(sv):
-        c = cos(qv, v)
-        if c > best:
-            best, best_i = c, i
-    return sents[best_i] if 0 <= best_i < len(sents) else None
+#     best_i, best = 0, -1.0
+#     for i, v in enumerate(sv):
+#         c = cos(qv, v)
+#         if c > best:
+#             best, best_i = c, i
+#     return sents[best_i] if 0 <= best_i < len(sents) else None

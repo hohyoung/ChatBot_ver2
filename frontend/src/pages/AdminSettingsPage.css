@@ -1,4 +1,9 @@
-/* 기본 컨테이너 */
+/* ===============================
+   Admin Settings — Clean CSS
+   (layout → switcher → panel → filters → table → columns → actions → responsive)
+   =============================== */
+
+/* ===== Layout ===== */
 .admin {
     display: flex;
     flex-direction: column;
@@ -14,7 +19,7 @@
     color: #6b7280;
 }
 
-/* 상단 카드 스위처 */
+/* ===== Switcher (Docs | Users) ===== */
 .admin__switcher {
     display: grid;
     grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -25,8 +30,8 @@
     border: 1px solid #e5e7eb;
     border-radius: 12px;
     padding: 12px;
-    text-align: left;
     background: #fff;
+    text-align: left;
     cursor: pointer;
 }
 
@@ -49,32 +54,11 @@
     margin-top: 6px;
 }
 
-/* 패널 공통 */
+/* ===== Panel ===== */
 .admin__panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
-}
-
-.admin__toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.admin__toolbar_l,
-.admin__toolbar_r {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.admin__hint {
-    color: #6b7280;
-}
-
-.admin__err {
-    color: #b91c1c;
 }
 
 .admin__empty {
@@ -84,7 +68,59 @@
     border-radius: 8px;
 }
 
-/* 테이블 */
+.admin__banner.error {
+    padding: 10px 12px;
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fee2e2;
+    border-radius: 8px;
+}
+
+/* ===== Filters ===== */
+.admin__filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+    gap: 10px;
+    max-width: 760px;
+    /* compact width */
+}
+
+.admin__filters--users {
+    grid-template-columns: repeat(5, minmax(160px, 1fr));
+}
+
+.admin__filter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.admin__filter_lbl {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.admin__input,
+.admin__select {
+    height: 34px;
+    padding: 0 10px;
+    width: 100%;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.admin__input:focus,
+.admin__select:focus {
+    outline: none;
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 3px rgba(148, 163, 184, .2);
+}
+
+.admin__input--narrow {
+    max-width: 360px;
+}
+
+/* ===== Table ===== */
 .admin__tablewrap {
     overflow: auto;
     border: 1px solid #e5e7eb;
@@ -106,8 +142,9 @@
 
 .admin__table th {
     background: #f8fafc;
-    text-align: left;
     color: #475569;
+    text-align: left;
+    white-space: nowrap;
 }
 
 .admin__title {
@@ -119,27 +156,63 @@
     color: #6b7280;
 }
 
-/* 입력/선택 */
-.admin__input,
-.admin__select {
-    height: 34px;
-    padding: 0 10px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    width: 100%;
+.admin__muted {
+    color: #6b7280;
 }
 
-.admin__input:focus,
-.admin__select:focus {
-    outline: none;
-    border-color: #94a3b8;
-    box-shadow: 0 0 0 3px rgba(148, 163, 184, .2);
+/* ===== Column widths & alignment ===== */
+.col-index {
+    width: 64px !important;
+    white-space: nowrap;
+    text-align: center;
 }
 
-/* 버튼(프로젝트 공통 클래스 활용 가정) */
+.col-uploader {
+    width: 160px;
+}
+
+.col-date {
+    width: 180px;
+    white-space: nowrap;
+}
+
+.col-vis {
+    width: 96px;
+    white-space: nowrap;
+}
+
+.col-chunks {
+    width: 90px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.col-preview {
+    width: 120px;
+    white-space: nowrap;
+}
+
+.col-actions {
+    width: 150px;
+    min-width: 150px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* ===== Actions (buttons) ===== */
+.admin__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    /* keep on one line */
+}
+
 .btn {
     border: 1px solid #d1d5db;
     background: #fff;
+    color: #111827;
     border-radius: 8px;
     height: 34px;
     padding: 0 12px;
@@ -160,9 +233,66 @@
     filter: brightness(0.95);
 }
 
-/* 반응형 */
+.btn-danger {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.btn-danger:hover {
+    filter: brightness(0.98);
+}
+
+/* Slightly tighter buttons in action cell for more room */
+.admin__actions .btn {
+    padding: 6px 10px;
+    line-height: 1;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+    .col-actions {
+        width: 130px;
+        min-width: 130px;
+    }
+
+    .admin__actions {
+        gap: 6px;
+    }
+
+    .admin__actions .btn {
+        padding: 5px 8px;
+        font-size: .92rem;
+    }
+}
+
+
 @media (max-width: 900px) {
     .admin__switcher {
         grid-template-columns: 1fr;
     }
+
+    .admin__filters {
+        grid-template-columns: 1fr;
+        max-width: 100%;
+    }
+
+    .admin__filters--users {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .col-actions {
+        width: 120px;
+        min-width: 120px;
+    }
+
+    .admin__actions {
+        gap: 4px;
+    }
+
+    .admin__actions .btn {
+        padding: 4px 7px;
+        font-size: .88rem;
+    }
 }
+

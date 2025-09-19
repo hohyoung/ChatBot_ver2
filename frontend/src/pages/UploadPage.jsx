@@ -1,145 +1,324 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./UploadPage.css";
-import { post, get } from "../api/http.js";
+import { get, getAuthToken } from "../api/http.js";
 import { me as fetchMe } from "../store/auth.js";
+import {
+    FaFileUpload,
+    FaCheckCircle,
+    FaExclamationCircle,
+    FaSpinner,
+    FaFileAlt,
+    FaTrash,
+    FaLock,
+    FaInfoCircle
+} from "react-icons/fa";
+
+/* 상태 표시 */
+const StatusDisplay = ({ status, job }) => {
+    if (!status && !job) {
+        return (
+            <div className="status-item info">
+                <div className="status-icon"><FaFileAlt /></div>
+                <div className="status-content">
+                    <h4>대기 중</h4>
+                    <p>업로드할 파일을 선택한 뒤 업로드를 시작하세요.</p>
+                </div>
+            </div>
+        );
+    }
+    if (job && !status) {
+        return (
+            <div className="status-item info">
+                <div className="status-icon"><FaSpinner className="fa-spin" /></div>
+                <div className="status-content">
+                    <h4>업로드 접수됨</h4>
+                    <p>{job.accepted}개의 파일이 대기열에 추가되었습니다. 잠시 후 인덱싱이 시작됩니다.</p>
+                </div>
+            </div>
+        );
+    }
+    if (status?.status === "pending") {
+        return (
+            <div className="status-item info">
+                <div className="status-icon"><FaSpinner className="fa-spin" /></div>
+                <div className="status-content">
+                    <h4>대기 중</h4>
+                    <p>작업이 곧 시작됩니다. 잠시만 기다려주세요.</p>
+                </div>
+            </div>
+        );
+    }
+    if (status?.status === "running") {
+        return (
+            <div className="status-item processing">
+                <div className="status-icon"><FaSpinner className="fa-spin" /></div>
+                <div className="status-content">
+                    <h4>인덱싱 작업 중…</h4>
+                    <p>총 {status.total ?? "-"}개 중 {status.processed ?? 0}개 처리 완료</p>
+                </div>
+            </div>
+        );
+    }
+    if (status?.status === "succeeded") {
+        return (
+            <div className="status-item success">
+                <div className="status-icon"><FaCheckCircle /></div>
+                <div className="status-content">
+                    <h4>업로드 성공</h4>
+                    <p>모든 파일의 인덱싱이 완료되었습니다.</p>
+                </div>
+            </div>
+        );
+    }
+    if (status?.status === "failed") {
+        return (
+            <div className="status-item error">
+                <div className="status-icon"><FaExclamationCircle /></div>
+                <div className="status-content">
+                    <h4>업로드 실패</h4>
+                    <p>{status.message || "처리 중 오류가 발생했습니다."}</p>
+                </div>
+            </div>
+        );
+    }
+    return null;
+};
 
 export default function UploadPage() {
     const [files, setFiles] = useState([]);
-    const [job, setJob] = useState(null); // { job_id, accepted, skipped }
-    const [status, setStatus] = useState(null); // { status, processed, total?, errors? }
-    const [user, setUser] = useState(null); // { id, username, security_level, ... }
-    const [errorMsg, setErrorMsg] = useState(""); // 화면에 띄울 에러 메시지
+    const [job, setJob] = useState(null);
+    const [status, setStatus] = useState(null);
+    const [user, setUser] = useState(null);
+    const [errorMsg, setErrorMsg] = useState("");
+    const [isDragOver, setIsDragOver] = useState(false);
     const timerRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const isLoggedIn = !!user;
-    const isDenied = isLoggedIn && Number(user?.security_level) === 4; // 4등급: 업로드 불가
-    const disabled = !isLoggedIn || isDenied;
+    // ✅ 업로드 허용 등급: 1~3 허용, 4(차단)는 불가
+    const canUploadByLevel = isLoggedIn && Number(user?.security_level) <= 3;
+    const isUploading = status?.status === "running" || status?.status === "pending" || (job && !status);
+    const disabled = !canUploadByLevel || isUploading; // 비로그인 or 4등급 or 업로딩 중
 
     useEffect(() => {
         (async () => {
-            try {
-                const u = await fetchMe();
-                setUser(u);
-            } catch {
-                setUser(null);
-            }
+            try { setUser(await fetchMe()); } catch { setUser(null); }
         })();
+
+        // ⬇ 로그인/로그아웃 시 페이지 새로고침
+        const onAuthChanged = () => window.location.reload();
+        const onStorage = (e) => {
+            if (e.key === "auth_token") onAuthChanged();
+        };
+        window.addEventListener("auth:changed", onAuthChanged);
+        window.addEventListener("storage", onStorage);
+
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
+            window.removeEventListener("auth:changed", onAuthChanged);
+            window.removeEventListener("storage", onStorage);
         };
     }, []);
 
-    const onPick = (e) => setFiles(Array.from(e.target.files || []));
-    const onDrop = (e) => {
-        e.preventDefault();
-        setFiles(Array.from(e.dataTransfer.files || []));
+    const pollStatus = (job_id) => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = setInterval(async () => {
+            try {
+                const stat = await get(`/docs/${encodeURIComponent(job_id)}/status`);
+                setStatus(stat);
+                if (stat.status === "succeeded" || stat.status === "failed") {
+                    clearInterval(timerRef.current);
+                    timerRef.current = null;
+                    setFiles([]); // 완료 후 비우기
+                }
+            } catch {
+                setErrorMsg("상태를 가져오는 데 실패했습니다.");
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }, 1500);
     };
-    const onDrag = (e) => e.preventDefault();
 
-    // 업로드 실행
     const upload = async () => {
-        setErrorMsg("");
+        if (!canUploadByLevel) return; // 안전장치
+        if (files.length === 0) {
+            setErrorMsg("업로드할 파일을 선택해주세요.");
+            return;
+        }
+        setJob(null); setStatus(null); setErrorMsg("");
 
-        if (!isLoggedIn) {
-            setErrorMsg("로그인이 필요합니다. 상단의 로그인 버튼을 눌러 로그인해 주세요.");
-            return;
-        }
-        if (isDenied) {
-            setErrorMsg("보안등급 4(외부 계정)는 문서 업로드 권한이 없습니다.");
-            return;
-        }
-        if (!files.length) {
-            setErrorMsg("업로드할 파일을 선택하세요.");
-            return;
-        }
-
-        const form = new FormData();
-        for (const f of files) form.append("files", f, f.name);
-        form.append("visibility", "public");
+        const formData = new FormData();
+        files.forEach((f) => formData.append("files", f));
+        formData.append("visibility", "public");
 
         try {
-            const res = await post("/docs/upload", form); // { job_id, accepted, skipped }
-            setJob(res);
+            const token = getAuthToken();
+            const headers = {};
+            if (token) headers["Authorization"] = `Bearer ${token}`;
 
-            if (timerRef.current) clearInterval(timerRef.current);
-            timerRef.current = setInterval(async () => {
-                try {
-                    const st = await get(`/docs/${res.job_id}/status`);
-                    setStatus(st);
-                    if (st?.status === "done" || st?.status === "error") {
-                        clearInterval(timerRef.current);
-                        timerRef.current = null;
-                    }
-                } catch (e) {
-                    console.warn("status poll error", e?.message || e);
+            const response = await fetch("/api/docs/upload", { method: "POST", body: formData, headers });
+            const result = await response.json();
+
+            if (!response.ok) {
+                if (result?.detail) {
+                    const details = Array.isArray(result.detail)
+                        ? result.detail.map((e) => `${(e.loc || []).join(".")}: ${e.msg}`).join(", ")
+                        : (result.detail.message || result.detail);
+                    throw new Error(`[${response.status}] ${details}`);
                 }
-            }, 1500);
-        } catch (e) {
-            let msg = e?.message || "업로드 중 오류가 발생했습니다.";
-            try {
-                const obj = JSON.parse(msg);
-                if (obj?.detail) msg = obj.detail;
-            } catch (_) { }
-            setErrorMsg(msg);
+                throw new Error(`[${response.status}] ${response.statusText}`);
+            }
+
+            setJob(result);
+            if (result?.job_id) pollStatus(result.job_id);
+        } catch (err) {
+            console.error("Upload failed:", err);
+            setErrorMsg(err?.message || "파일 업로드에 실패했습니다.");
         }
     };
+
+    const addFiles = (newFiles) => {
+        if (!canUploadByLevel) return; // 안전장치
+        setFiles((prev) => {
+            const combined = [...prev, ...newFiles];
+            return Array.from(new Map(combined.map((f) => [f.name, f])).values());
+        });
+    };
+
+    const onPick = (e) => {
+        if (!canUploadByLevel) return;
+        const picked = Array.from(e.target.files || []);
+        addFiles(picked);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!canUploadByLevel) return;
+        setIsDragOver(true);
+    };
+    const handleDragLeave = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!canUploadByLevel) return;
+        setIsDragOver(false);
+    };
+    const handleDrop = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!canUploadByLevel) return;
+        setIsDragOver(false);
+        const dropped = Array.from(e.dataTransfer.files || []);
+        if (dropped.length > 0) addFiles(dropped);
+    };
+
+    const removeFile = (name) => setFiles((fs) => fs.filter((f) => f.name !== name));
+
+    const showLoginGuard = !isLoggedIn;
+    const showLevelGuard = isLoggedIn && !canUploadByLevel; // (= 4등급)
 
     return (
         <div className="upload-page">
             <h2>문서 업로드</h2>
 
-            {!isLoggedIn && (
-                <div className="banner warning">
-                    로그인한 사용자만 문서를 업로드할 수 있습니다. 상단의 <b>로그인</b> 버튼을 눌러 로그인해 주세요.
-                </div>
-            )}
-            {isDenied && (
-                <div className="banner error">
-                    <b>업로드 권한 없음</b> — 보안등급 4(외부 계정)는 문서 업로드가 제한됩니다.
-                </div>
-            )}
-            {errorMsg && <div className="banner error">{errorMsg}</div>}
 
-            <div className="section">
-                <h3 style={{ marginTop: 0 }}>파일 선택</h3>
-                <div className={`card ${disabled ? "is-disabled" : ""}`}>
-                    <div style={{ marginBottom: 8 }}>
-                        <input type="file" multiple onChange={onPick} />
+            <div className="info-banner">
+                <FaInfoCircle />
+                <p>
+                    <strong>PDF 형식의 파일을 권장합니다.</strong>
+                    <br />
+                    PDF로 업로드 시, 문서 미리보기가 가능해 품질 좋은 답변을 얻을 수 있습니다.
+                </p>
+            </div>
+
+            {/* 🔒 가드 배너 */}
+            {showLoginGuard && (
+                <div className="guard-banner">
+                    <FaLock />
+                    <div>
+                        <strong>로그인이 필요합니다.</strong>
+                        <div>로그인 후 업로드 기능을 이용할 수 있어요.</div>
                     </div>
+                </div>
+            )}
+            {showLevelGuard && (
+                <div className="guard-banner">
+                    <FaLock />
+                    <div>
+                        <strong>권한이 부족합니다.</strong>
+                        <div>보안등급 1–3 사용자만 업로드할 수 있어요.</div>
+                    </div>
+                </div>
+            )}
+
+            {/* 드랍존 카드 */}
+            <div className="section">
+                <div className={`card dropzone-card ${disabled ? "is-disabled" : ""}`}>
+                    {/* 잠금 오버레이 */}
+                    {disabled && (
+                        <div className="blocked-overlay">
+                            <FaLock />
+                            <div className="blocked-text">
+                                {showLoginGuard ? "로그인 후 이용 가능합니다" : "업로드 권한이 없습니다"}
+                            </div>
+                        </div>
+                    )}
+
+                    <label className="file-input-label">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            onChange={onPick}
+                            disabled={disabled}
+                            accept=".pdf,.docx,.txt,.html,.md,.csv,.pptx"
+                        />
+                        📂 파일 추가
+                    </label>
 
                     <div
-                        className={`dropzone ${disabled ? "is-disabled" : ""}`}
-                        onDrop={onDrop}
-                        onDragOver={onDrag}
+                        className={`dropzone ${isDragOver ? "is-dragover" : ""} ${disabled ? "is-blocked" : ""}`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
                     >
-                        여기로 파일을 끌어다 놓거나, 위에서 선택하세요.
+                        {files.length === 0 ? (
+                            <div className="dropzone-placeholder">
+                                <FaFileUpload />
+                                <p>여기로 파일을 끌어다 놓으세요.</p>
+                            </div>
+                        ) : (
+                            <div className="file-list">
+                                {files.map((f) => (
+                                    <div key={f.name} className="file-item">
+                                        <span className="file-name">{f.name}</span>
+                                        <button className="remove-btn" onClick={() => removeFile(f.name)} disabled={isUploading}>
+                                            <FaTrash />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
-                    <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button className="btn btn-primary" onClick={upload} disabled={disabled}>
-                            업로드
+                    <div className="button-area">
+                        <button className="btn btn-primary" onClick={upload} disabled={disabled || files.length === 0}>
+                            {isUploading ? "처리 중..." : `파일 ${files.length}개 업로드`}
                         </button>
                     </div>
-
-                    <div className="small">여러 파일 선택 가능. 업로드 후 인덱싱 상태를 폴링합니다.</div>
                 </div>
             </div>
 
-            <div className="section">
-                <h3 style={{ marginTop: 0 }}>상태</h3>
+            {/* 상태 카드 */}
+            <div className="section status-section">
+                <h3>업로드 상태</h3>
                 <div className="card">
-                    <div className="status-grid">
-                        <div className="key">선택 파일</div>
-                        <div className="val">{files.length}</div>
-
-                        <div className="key">잡</div>
-                        <div className="val">{job ? JSON.stringify(job) : "—"}</div>
-
-                        <div className="key">진행</div>
-                        <div className="val">{status ? JSON.stringify(status) : "—"}</div>
+                    <div className="status-box">
+                        <StatusDisplay status={status} job={job} />
                     </div>
                 </div>
             </div>
+
+            {/* 서버/클라이언트 오류 배너 */}
+            {errorMsg && <div className="error-banner">{errorMsg}</div>}
         </div>
     );
 }

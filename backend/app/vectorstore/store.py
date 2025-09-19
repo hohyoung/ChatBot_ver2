@@ -1,4 +1,3 @@
-# backend/app/vectorstore/store.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,7 +49,7 @@ def _get_or_create_collection():
     return _collection
 
 
-# 과거 스니펫 호환용 별칭 (내가 예시로 썼던 이름)
+# 과거 스니펫 호환용 별칭
 _ensure_collection = _get_or_create_collection
 
 
@@ -90,10 +89,18 @@ def sanitize_metadata(meta: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def upsert_chunks(chunks: Iterable, embeddings: List[List[float]]) -> None:
+def upsert_chunks(
+    chunks: Iterable,
+    embeddings: List[List[float]],
+    *,
+    common_metadata: Optional[
+        Dict[str, Any]
+    ] = None,  # ⬅ 추가: 모든 청크에 공통으로 붙일 메타
+) -> None:
     """
     chunks: ChunkIn 리스트 (chunk_id, content, doc_id, doc_type, doc_title, visibility, tags ...)
     embeddings: 각 chunk에 대응하는 2D 리스트
+    common_metadata: 각 청크 메타에 일괄 병합될 공통 메타(e.g. uploaded_at)
     """
     col = _get_or_create_collection()
 
@@ -136,6 +143,7 @@ def upsert_chunks(chunks: Iterable, embeddings: List[List[float]]) -> None:
             "doc_relpath": getattr(c, "doc_relpath", None),
             "visibility": getattr(c, "visibility", None),
             "tags": getattr(c, "tags", None),
+            "doc_hash": getattr(c, "doc_hash", None),
             "owner_id": (
                 None
                 if getattr(c, "owner_id", None) is None
@@ -149,15 +157,19 @@ def upsert_chunks(chunks: Iterable, embeddings: List[List[float]]) -> None:
             "page_end": page_end,
         }
 
+        # 공통 메타(예: uploaded_at) 병합
+        if common_metadata:
+            md.update(common_metadata)
+
         # None 값은 제외(비-PDF의 page_*는 드롭됨)
         metadatas.append(
             sanitize_metadata({k: v for k, v in md.items() if v is not None})
         )
 
-    # 디버깅(선택): 첫 3개 메타에 page_* 들어갔는지 눈으로 확인
+    # 디버깅(선택)
     try:
         sample = [
-            {k: m.get(k) for k in ("chunk_id", "page_start", "page_end", "doc_url")}
+            {k: m.get(k) for k in ("chunk_id", "page_start", "page_end", "uploaded_at")}
             for m in metadatas[:3]
         ]
         log.debug("[VECTORSTORE] upsert metas sample: %s", sample)
@@ -255,13 +267,29 @@ def _and(*conds: Dict[str, Any]) -> Dict[str, Any]:
     return {"$and": list(conds)}
 
 
+def doc_exists_by_hash(
+    *, doc_hash: str, owner_id: Optional[int] = None, visibility: Optional[str] = None
+) -> bool:
+    """
+    동일 내용 문서가 이미 업서트되어 있는지 확인.
+    owner_id/visibility가 주어지면 같은 소유자/가시성 범위에서만 중복으로 취급.
+    """
+    col = get_collection()
+    conds: list[Dict[str, Any]] = [_eq("doc_hash", doc_hash)]
+    if owner_id is not None:
+        conds.append(_eq("owner_id", str(owner_id)))
+    if visibility:
+        conds.append(_eq("visibility", visibility))
+    res = col.get(where=_and(*conds), include=["metadatas"])
+    return bool(res and res.get("ids"))
+
+
 def list_docs_by_owner(owner_id: int) -> list[dict]:
     """
     owner_id로 내 문서 목록 조회.
-    반환: [{doc_id, doc_title, visibility, doc_url, chunk_count}, ...]
+    반환: [{doc_id, doc_title, visibility, doc_url, uploaded_at, chunk_count}, ...]
     """
     col = get_collection()
-    # ✅ 단일 조건도 연산자 스타일로
     res = col.get(
         where=_eq("owner_id", str(owner_id)),
         include=["metadatas"],
@@ -280,13 +308,28 @@ def list_docs_by_owner(owner_id: int) -> list[dict]:
                 "doc_title": meta.get("doc_title"),
                 "visibility": meta.get("visibility"),
                 "doc_url": meta.get("doc_url"),
+                "doc_relpath": meta.get("doc_relpath"),
                 "chunk_count": 0,
+                "_uploaded_at_min": None,  # 최초 업로드 시각 집계
             },
         )
         d["chunk_count"] += 1
         if not d.get("doc_url") and meta.get("doc_url"):
             d["doc_url"] = meta.get("doc_url")
-    return list(docs.values())
+        if not d.get("doc_relpath") and meta.get("doc_relpath"):
+            d["doc_relpath"] = meta.get("doc_relpath")
+        ua = meta.get("uploaded_at")
+        if ua:
+            if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
+                d["_uploaded_at_min"] = ua
+
+    out = []
+    for v in docs.values():
+        v["uploaded_at"] = v.pop("_uploaded_at_min", None)
+        out.append(v)
+    # 최신 업로드가 위로 오도록
+    out.sort(key=lambda x: (x["uploaded_at"] or ""), reverse=True)
+    return out
 
 
 def delete_doc_for_owner(doc_id: str, owner_id: int) -> Dict[str, Any]:
@@ -303,14 +346,13 @@ def delete_doc_for_owner(doc_id: str, owner_id: int) -> Dict[str, Any]:
     ids = res.get("ids") or []
     metas = res.get("metadatas") or []
     if not ids:
-        return {"deleted": 0, "chunk_ids": [], "doc_urls": set(), "doc_relpaths": set()}
+        return {"deleted": 0, "chunk_ids": [], "doc_urls": [], "doc_relpaths": []}
 
     col.delete(ids=ids)
 
-    urls = {m.get("doc_url") for m in metas if m and m.get("doc_url")}
-    rels = {
-        m.get("doc_relpath") for m in metas if m and m.get("doc_relpath")
-    }  # ✅ 추가
+    urls = [m.get("doc_url") for m in metas if m and m.get("doc_url")]
+    rels = [m.get("doc_relpath") for m in metas if m and m.get("doc_relpath")]
+
     return {
         "deleted": len(ids),
         "chunk_ids": ids,
@@ -320,18 +362,16 @@ def delete_doc_for_owner(doc_id: str, owner_id: int) -> Dict[str, Any]:
 
 
 # 관리자용 함수
-
-
 def list_all_docs() -> list[dict]:
     """
     모든 소유자의 문서를 doc_id 단위로 집계.
-    반환: [{doc_id, doc_title, visibility, owner_id, owner_username, doc_url, doc_relpath, chunk_count}, ...]
+    ★★★ uploaded_at 필드를 포함하여 반환하도록 수정 ★★★
     """
     col = get_collection()
     res = col.get(include=["metadatas"])
 
     docs: dict[str, dict] = {}
-    for meta in res.get("metadatas") or []:
+    for meta in res.get("metadatas", []) or []:
         if not meta:
             continue
         did = meta.get("doc_id")
@@ -349,16 +389,32 @@ def list_all_docs() -> list[dict]:
                 "doc_url": meta.get("doc_url"),
                 "doc_relpath": meta.get("doc_relpath"),
                 "chunk_count": 0,
+                # _uploaded_at_min을 임시 필드로 사용하여 가장 오래된 시간을 추적
+                "_uploaded_at_min": None,
             },
         )
         d["chunk_count"] += 1
+
+        # ★★★ 핵심 수정: 가장 오래된 uploaded_at을 해당 문서의 대표 업로드 날짜로 사용 ★★★
+        ua = meta.get("uploaded_at")
+        if ua:
+            if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
+                d["_uploaded_at_min"] = ua
+
         # 대표 URL/relpath 미설정 시 최초 값 세팅
         if (not d.get("doc_url")) and meta.get("doc_url"):
             d["doc_url"] = meta.get("doc_url")
         if (not d.get("doc_relpath")) and meta.get("doc_relpath"):
             d["doc_relpath"] = meta.get("doc_relpath")
 
-    return list(docs.values())
+    # 최종적으로 _uploaded_at_min 값을 uploaded_at으로 옮기고 정렬
+    out = []
+    for v in docs.values():
+        v["uploaded_at"] = v.pop("_uploaded_at_min", None)
+        out.append(v)
+
+    out.sort(key=lambda x: (x["uploaded_at"] or ""), reverse=True)
+    return out
 
 
 def delete_doc_any(doc_id: str) -> Dict[str, Any]:

@@ -158,10 +158,18 @@
     cursor: not-allowed;
 }
 
-.btn-danger {
+button.btn.btn-danger {
     background: #ef4444;
     border-color: #ef4444;
     color: #fff;
+}
+
+button.btn.btn-danger:hover {
+    filter: brightness(0.98);
+}
+
+button.btn.btn-danger:active {
+    transform: translateY(1px);
 }
 
 /* 빈 상태 */
@@ -188,19 +196,437 @@
 
 /* === Global fix: primary 버튼은 항상 파란 배경/흰 글자 === */
 button.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 
 /* .btn(흰 배경)가 나중에 로딩되더라도 .btn.btn-primary가 이김 */
 .btn.btn-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
 }
 
 .btn.btn-primary:hover {
-  background: var(--primary-600);
+    background: var(--primary-600);
+}
+
+
+
+
+/* ─────────────────────────────
+   로그인 가드 (업로드 페이지와 동일 컨셉)
+   ───────────────────────────── */
+.guard-banner {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #7c2d12;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+
+.guard-banner svg {
+    font-size: 18px;
+}
+
+/* 카드 비활성 시 */
+.table-card.is-disabled {
+    position: relative;
+    filter: grayscale(0.15);
+    opacity: 0.75;
+}
+
+/* 입력/버튼/링크 차단 느낌(시각적) */
+.table-card.is-disabled * {
+    pointer-events: none;
+}
+
+/* 잠금 오버레이 */
+.blocked-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 2;
+    border: 1px dashed #e5e7eb;
+}
+
+.blocked-overlay svg {
+    font-size: 18px;
+    color: #9ca3af;
+}
+
+.blocked-text {
+    color: #374151;
+    font-weight: 600;
+}
+
+
+/* ─────────────────────────────
+   공통 제목/배너
+   ───────────────────────────── */
+.section-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 6px 0 12px;
+}
+
+/* ─────────────────────────────
+   로그인 가드(이전과 동일)
+   ───────────────────────────── */
+.guard-banner {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #7c2d12;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+
+.guard-banner svg {
+    font-size: 18px;
+}
+
+.table-card.is-disabled {
+    position: relative;
+    filter: grayscale(0.15);
+    opacity: 0.75;
+}
+
+.table-card.is-disabled * {
+    pointer-events: none;
+}
+
+.blocked-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 2;
+    border: 1px dashed #e5e7eb;
+}
+
+.blocked-overlay svg {
+    font-size: 18px;
+    color: #9ca3af;
+}
+
+.blocked-text {
+    color: #374151;
+    font-weight: 600;
+}
+
+/* ─────────────────────────────
+   프로필 섹션
+   ───────────────────────────── */
+.profile {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 16px;
+    align-items: center;
+}
+
+.form-grid label {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.kv {
+    padding: 6px 0;
+}
+
+.pwd-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+    gap: 8px;
+}
+
+.profile-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.form-msg {
+    color: #059669;
+    font-size: 12px;
+}
+
+/* 버튼 톤(이미 프로젝트 공통 .btn / .btn-danger 사용 중) 보완 */
+.btn-danger {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* 반응형 */
+@media (max-width: 900px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pwd-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+/* ─────────────────────────────
+   Settings 상단 카드 스위처 (Admin 톤 차용)
+   ───────────────────────────── */
+.settings__switcher {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.settings__card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: left;
+    background: #fff;
+    cursor: pointer;
+}
+
+.settings__card:hover {
+    border-color: #cbd5e1;
+}
+
+.settings__card.is-active {
+    border-color: var(--primary, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, .15) inset;
+}
+
+.settings__card_ttl {
+    font-weight: 600;
+}
+
+.settings__card_desc {
+    color: #6b7280;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+@media (max-width: 900px) {
+    .settings__switcher {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+
+/* ───────── 카드 컨테이너 공통 여백/섀도우 보강 ───────── */
+.settings-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 16px;
+    /* ← 여백 확실히 */
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, .05));
+}
+
+.settings-card+.settings-card {
+    margin-top: 12px;
+}
+
+.settings-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.settings-card__title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+/* 우측 액션 */
+.row-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-compact {
+    padding: 6px 10px;
+}
+
+/* ───────── 보기 모드: 키-값 리스트 ───────── */
+.kv-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.kv-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    /* 레이블-값 정렬 */
+    gap: 12px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid #f3f4f6;
+    border-radius: 10px;
+    background: #fafafa;
+}
+
+.kv-label {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.kv-value {
+    font-weight: 600;
+}
+
+/* ───────── 편집 모드: 폼 그리드 ───────── */
+.form-grid.nice {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 12px 14px;
+    align-items: center;
+    padding: 8px 4px;
+}
+
+.form-sep {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #e5e7eb;
+    color: #374151;
+    font-weight: 700;
+}
+
+.pwd-grid {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+    gap: 8px;
+}
+
+/* 메시지 */
+.form-msg.ok {
+    color: #059669;
+    margin-top: 8px;
+}
+
+/* ───────── 테이블 가독성/간격 업그레이드 ───────── */
+.data-table.pretty {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.data-table.pretty th,
+.data-table.pretty td {
+    padding: 10px 12px;
+}
+
+.data-table.pretty thead th {
+    background: #f8fafc;
+    color: #374151;
+    font-weight: 700;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.data-table.pretty tbody tr+tr td {
+    border-top: 1px solid #f1f5f9;
+}
+
+.cell-title {
+    font-weight: 600;
+}
+
+.cell-sub {
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+.col-date {
+    width: 180px;
+    white-space: nowrap;
+}
+
+.col-vis {
+    width: 90px;
+}
+
+.col-num {
+    width: 90px;
+    text-align: right;
+}
+
+.col-preview {
+    width: 100px;
+    white-space: nowrap;
+}
+
+.col-actions {
+    width: 120px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.muted {
+    color: #6b7280;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* 동작 버튼 가독성 */
+.admin__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* 반응형 */
+@media (max-width: 900px) {
+
+    .kv-row,
+    .form-grid.nice {
+        grid-template-columns: 1fr;
+    }
+
+    .pwd-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .col-date {
+        width: auto;
+    }
 }

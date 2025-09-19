@@ -137,17 +137,30 @@
     cursor: not-allowed;
 }
 
-.btn-ghost {
-    background: #eef2ff;
-    color: #1f2a62;
-    border-color: #c7d2fe;
+.btn.btn-ghost {
+    /* 1. 배경색을 연한 회색으로 지정하여 구분감을 줍니다. */
+    background-color: var(--interactive-bg, #f1f3f5);
+    /* 2. 투명했던 테두리에 색상을 지정하여 외곽선을 만듭니다. */
+    border: 1px solid var(--border-color, #dee2e6);
+    /* 3. 기본 글자 색상을 지정합니다. */
+    color: var(--text-secondary, #495057);
+
+    padding: 8px 12px;
+    font-size: 14px;
 }
 
+/* 마우스를 올렸을 때의 스타일 */
+.btn.btn-ghost:hover {
+    background-color: #e9ecef;
+    /* 살짝 더 어두운 회색 */
+    border-color: #ced4da;
+}
 .btn-primary {
     background: #3b82f6;
     border-color: #3b82f6;
     color: #fff;
 }
+
 
 .form-row input,
 .form-row select,

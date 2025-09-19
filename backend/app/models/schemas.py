@@ -71,6 +71,7 @@ class Chunk(StrictModel):
 
     owner_id: Optional[int] = Field(default=None, description="업로더 사용자 ID")
     owner_username: Optional[str] = Field(default=None, description="업로더 계정명")
+    doc_hash: Optional[str] = Field(default=None, description="SHA-256 해시(내용 기반)")
 
     # PDF 기준 시작/끝 페이지(1-base). PDF가 아니면 None.
     page_start: Optional[int] = Field(default=None, description="시작 페이지(1-base)")

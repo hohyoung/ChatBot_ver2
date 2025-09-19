@@ -22,9 +22,10 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
     if (!open) return null;
 
     const onBackdropClick = (e) => {
-        if (loading) return;
-        if (e.target.classList.contains("authmodal__backdrop")) onClose?.();
+        
+        return;
     };
+
 
     async function handleLogin(e) {
         e?.preventDefault();
@@ -165,14 +166,7 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                                 <button className="btn btn-primary" disabled={loading} type="submit">
                                     로그인
                                 </button>
-                                <button
-                                    className="btn btn-ghost"
-                                    disabled={loading}
-                                    type="button"
-                                    onClick={() => setTab("signup")}
-                                >
-                                    회원가입으로
-                                </button>
+                                
                             </div>
                         </form>
                     ) : (
@@ -246,23 +240,13 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                                 <button className="btn btn-primary" disabled={loading} type="submit">
                                     가입하기
                                 </button>
-                                <button
-                                    className="btn btn-ghost"
-                                    disabled={loading}
-                                    type="button"
-                                    onClick={() => setTab("login")}
-                                >
-                                    로그인으로
-                                </button>
+                                
                             </div>
                         </form>
                     )}
                 </div>
 
-                <div className="authmodal__footer small">
-                    지금은 이메일 없이 가입되며, <b>아이디 중복확인만</b>으로 진행됩니다.
-                    추후 이메일 인증을 추가할 예정입니다.
-                </div>
+                
             </div>
         </div>
     );

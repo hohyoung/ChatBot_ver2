@@ -1,113 +1,95 @@
 import React, { useEffect, useState } from "react";
-import "./SettingPage.css"; // ✅ CSS 분리
+import "./SettingPage.css";
 import { docsApi } from "../api/http";
+import { me as fetchMe } from "../store/auth";
+import { FaLock } from "react-icons/fa";
+
+import ProfileSection from "../components/Settings/ProfileSection.jsx";
+import MyDocsSection from "../components/Settings/MyDocsSection.jsx";
+
+/** 상단 카드 스위처 */
+function SettingsSwitcher({ value, onChange }) {
+  const cards = [
+    { key: "profile", title: "내 정보", desc: "이름/아이디/이메일/비밀번호 수정" },
+    { key: "docs", title: "내 문서", desc: "내가 업로드한 문서 목록/삭제" },
+  ];
+  return (
+    <div className="settings__switcher">
+      {cards.map((c) => (
+        <button
+          key={c.key}
+          onClick={() => onChange(c.key)}
+          className={"settings__card" + (value === c.key ? " is-active" : "")}
+        >
+          <div className="settings__card_ttl">{c.title}</div>
+          <div className="settings__card_desc">{c.desc}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function SettingsPage() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
   const [err, setErr] = useState("");
-
-  async function load() {
-    setLoading(true);
-    setErr("");
-    try {
-      const res = await docsApi.myList();
-      setItems(res?.items || []);
-    } catch (e) {
-      setErr(e?.message || "목록을 불러올 수 없습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [mode, setMode] = useState("profile");
+  const isLoggedIn = !!user;
 
   useEffect(() => {
-    load();
+    (async () => {
+      try { setUser(await fetchMe()); } catch { setUser(null); }
+    })();
+
+    const onAuthChanged = () => window.location.reload();
+    const onStorage = (e) => { if (e.key === "auth_token") onAuthChanged(); };
+    window.addEventListener("auth:changed", onAuthChanged);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("auth:changed", onAuthChanged);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
-
-  async function onDelete(doc_id) {
-    if (!confirm("이 문서를 삭제할까요? (연관 청크/피드백도 삭제됩니다)")) return;
-    try {
-      await docsApi.deleteMy(doc_id);
-      await load();
-    } catch (e) {
-      alert(e?.message || "삭제 실패");
-    }
-  }
-
-  const visibilityChip = (v) => {
-    const vv = (v || "").toLowerCase();
-    const cls =
-      vv === "public" ? "chip chip--public" :
-      vv === "private" ? "chip chip--private" :
-      "chip chip--org";
-    const label =
-      vv === "public" ? "공개" :
-      vv === "private" ? "비공개" :
-      "사내";
-    return <span className={cls}>{label}</span>;
-  };
 
   return (
     <div className="settings-page">
       <h2 className="page-title">설정</h2>
-      <p className="page-subtitle">내가 업로드한 문서들을 확인하고 관리할 수 있습니다.</p>
+      <p className="page-subtitle">계정/문서 등 개인 설정을 관리합니다.</p>
 
+      <SettingsSwitcher value={mode} onChange={setMode} />
+
+      {!isLoggedIn && (
+        <div className="banner guard-banner">
+          <FaLock />
+          <div>
+            <strong>로그인이 필요합니다.</strong>
+            <div>로그인 후 설정을 변경할 수 있어요.</div>
+          </div>
+        </div>
+      )}
       {err && <div className="banner error">{err}</div>}
 
-      <div className="section">
-        <div className="toolbar">
-          <span className="small">총 {items.length}건</span>
-        </div>
+      {/* ⬇️ 바깥 컨테이너는 ‘문구(타이틀)’ 없이 섹션 컴포넌트만 렌더 */}
+      <section className="section">
+        <div className={`card table-card ${!isLoggedIn ? "is-disabled" : ""}`}>
+          {!isLoggedIn && (
+            <div className="blocked-overlay">
+              <FaLock />
+              <div className="blocked-text">로그인 후 이용 가능합니다</div>
+            </div>
+          )}
 
-        <div className="card table-card">
-          {loading ? (
-            <div className="empty">불러오는 중…</div>
-          ) : items.length === 0 ? (
-            <div className="empty">업로드한 문서가 없습니다.</div>
+          {mode === "profile" ? (
+            <ProfileSection
+              user={user}
+              onUserRefresh={async () => {
+                try { const u = await fetchMe(); setUser(u || null); } catch { }
+              }}
+            />
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>제목</th>
-                  <th>doc_id</th>
-                  <th>가시성</th>
-                  <th>청크수</th>
-                  <th>미리보기</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => (
-                  <tr key={it.doc_id}>
-                    <td>{it.doc_title || "-"}</td>
-                    <td className="mono">{it.doc_id}</td>
-                    <td>{visibilityChip(it.visibility)}</td>
-                    <td>{it.chunk_count}</td>
-                    <td>
-                      {it.doc_url ? (
-                        <a href={it.doc_url} target="_blank" rel="noreferrer">
-                          열기
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-danger"
-                        onClick={() => onDelete(it.doc_id)}
-                        aria-label={`문서 삭제: ${it.doc_title || it.doc_id}`}
-                      >
-                        삭제
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <MyDocsSection isLoggedIn={isLoggedIn} docsApi={docsApi} />
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

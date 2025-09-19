@@ -1,4 +1,4 @@
-// frontend/src/components/DocViewer/DocViewer.jsx
+// src/components/DocViewer/DocViewer.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "./DocViewer.css";
 
@@ -6,18 +6,15 @@ function buildDocUrl(meta) {
     if (!meta) return null;
 
     const relRaw = String(meta.doc_relpath || "");
-    const relNorm = relRaw.replace(/\\/g, "/").replace(/^\/+/, ""); // \ → /, 선행 / 제거
+    const relNorm = relRaw.replace(/\\/g, "/").replace(/^\/+/, "");
 
-    // public/ 또는 static/docs/ 접두어 제거
     let relCore = relNorm;
     for (const p of ["public/", "static/docs/"]) {
         if (relCore.startsWith(p)) relCore = relCore.slice(p.length);
     }
 
-    // 서버가 준 doc_url 우선, 없으면 /static/docs/<core>
     let url = meta.doc_url || (relCore ? `/static/docs/${relCore}` : null);
     if (url) {
-        // 과거 데이터 보호: 중복 접두어 정리
         url = url.replace("/static/docs/public/", "/static/docs/");
         url = url.replace("/static/docs/static/docs/", "/static/docs/");
     }
@@ -31,10 +28,8 @@ function buildDocUrl(meta) {
     return url ? url + anchor : null;
 }
 
-// 해시/쿼리 제거 후 확장자 판별
-function isPdfUrl(u) {
-    const base = (u || "").split("#")[0].split("?")[0];
-    return !!base && base.toLowerCase().endsWith(".pdf");
+function isPdfUrl(url) {
+    return url && url.toLowerCase().includes(".pdf");
 }
 
 export default function DocViewer({ source }) {
@@ -51,8 +46,6 @@ export default function DocViewer({ source }) {
         }
         const url = buildDocUrl(source);
         setFinalUrl(url || null);
-        // 필요시 디버깅:
-        // console.debug("[DocViewer] finalUrl=", url);
     }, [source]);
 
     const isPdf = isPdfUrl(finalUrl);
@@ -71,7 +64,8 @@ export default function DocViewer({ source }) {
             <div className="viewer__body">
                 {finalUrl ? (
                     isPdf ? (
-                        <iframe src={finalUrl} title={title} />
+                        // ★★★ 핵심 수정: iframe에 key={finalUrl} 속성 추가 ★★★
+                        <iframe key={finalUrl} src={finalUrl} title={title} />
                     ) : (
                         <div className="viewer__empty">
                             이 형식은 미리보기가 어렵습니다.{" "}

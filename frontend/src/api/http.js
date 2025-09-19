@@ -89,7 +89,16 @@ async function http(method, path, body, opts = {}) {
         if (res.status === 204) return null;
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("application/json")) return await res.json();
-        return await parseJsonSafe(res);
+        return await parseJsonSafe(res);  
+    }
+
+    if (res.status === 401) {
+        try {
+            clearAuthToken();
+        } catch { }
+        try {
+            window.dispatchEvent(new Event("auth:changed"));
+        } catch { }
     }
 
     const data = await parseJsonSafe(res);
@@ -156,6 +165,8 @@ export const authApi = {
             new_password,
             new_password_confirm,
         }),
+
+    updateMe: (patchDoc) => patch("/auth/me", patchDoc),
 };
 
 // --------------------------

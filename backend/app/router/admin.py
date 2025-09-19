@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Query, Path
@@ -15,6 +16,7 @@ from app.router.auth import current_user
 from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner
 from app.services.storage import delete_files_by_relpaths
 from app.services.feedback_store import delete_many as feedback_delete_many
+from app.services.storage import DOCS_DIR
 
 router = APIRouter()
 
@@ -142,45 +144,56 @@ def list_all_docs(
     authorization: str = Header(None),
     db: Session = Depends(get_db),
     q: str | None = Query(
-        default=None, description="제목/소유자 username 부분 일치 검색"
+        default=None, description="제목/업로더 이름/아이디 부분 일치"
     ),
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ):
     """
-    모든 사용자의 문서를 관리자 권한으로 조회.
-    기존 /docs/my 가 반환하는 item 형태와 최대한 동일하게 맞춘다.
+    모든 사용자의 문서를 관리자 권한으로 조회한다.
+    각 문서에 업로더 정보(owner_id/owner_username/owner_name)와 uploaded_at을 확실히 채워서 응답.
     """
-    _require_admin(
-        authorization, db
-    )  # 관리자 가드  :contentReference[oaicite:7]{index=7}
+    _require_admin(authorization, db)
 
-    # 1) 모든 사용자 id 로드 (필요하면 q로 1차 필터)
-    user_query = db.query(m.User)
+    # 1) 사용자 조회(필터 적용)
+    user_q = db.query(m.User)
     if q:
         like = f"%{q}%"
-        user_query = user_query.filter(
+        user_q = user_q.filter(
             (m.User.username.ilike(like)) | (m.User.name.ilike(like))
         )
-    users = user_query.all()
+    users = user_q.all()
 
-    # 2) 각 사용자별 문서 집계
+    # 2) 사용자별 문서 수집 + 필드 보강
     items: list[dict] = []
+    q_lower = (q or "").lower()
     for u in users:
-        docs = list_docs_by_owner(
-            int(u.id)
-        )  # 기존 유틸 재사용  :contentReference[oaicite:8]{index=8}
-        if q:
-            # 제목/owner_username 간단 필터
-            docs = [
-                d
-                for d in docs
-                if (q.lower() in (d.get("doc_title") or "").lower())
-                or (q.lower() in (d.get("owner_username") or "").lower())
-            ]
-        items.extend(docs)
+        docs = list_docs_by_owner(int(u.id))
+        for d in docs:
+            row = dict(d or {})
+            # 업로더 정보 확정 (이름/아이디 모두 포함)
+            row.setdefault("owner_id", int(u.id))
+            row.setdefault("owner_username", u.username or "")
+            row.setdefault("owner_name", u.name or u.username or "")
 
-    # 3) offset/limit 적용
+            # 업로드 시각 보강
+            row["uploaded_at"] = row.get("uploaded_at") or _pick_uploaded_at(row)
+
+            # q가 있으면 제목/업로더(이름/아이디)로 2차 필터링
+            if q:
+                title = (row.get("doc_title") or "").lower()
+                owner_name = (row.get("owner_name") or "").lower()
+                owner_user = (row.get("owner_username") or "").lower()
+                if (
+                    (q_lower not in title)
+                    and (q_lower not in owner_name)
+                    and (q_lower not in owner_user)
+                ):
+                    continue
+
+            items.append(row)
+
+    # 3) offset/limit
     items = items[offset : offset + limit]
     return {"items": items}
 
@@ -234,3 +247,35 @@ def admin_delete_doc(
         stats = delete_files_by_relpaths(rels)
 
     return {"ok": True, "deleted_chunks": deleted, "file_delete": stats}
+
+
+def _pick_uploaded_at(row: dict) -> str | None:
+    """
+    uploaded_at 후보들을 순서대로 고르고, 없으면 파일 mtime을 시도.
+    ISO8601 문자열(UTC/로컬 무관)을 반환하거나 None.
+    """
+    for k in ("uploaded_at", "created_at", "updated_at", "ingested_at"):
+        v = row.get(k)
+        if v:
+            try:
+                dt = (
+                    v
+                    if isinstance(v, datetime)
+                    else datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+                )
+                return dt.isoformat()
+            except Exception:
+                continue
+
+    # 파일 경로가 있으면 mtime을 사용
+    rel = (row.get("doc_relpath") or "").replace("\\", "/").lstrip("/")
+    if rel:
+        try:
+            from app.services.storage import DOCS_DIR  # 이미 파일 상단 import 되어 있음
+
+            p = (DOCS_DIR / rel).resolve()
+            if p.exists():
+                return datetime.fromtimestamp(p.stat().st_mtime).isoformat()
+        except Exception:
+            pass
+    return None

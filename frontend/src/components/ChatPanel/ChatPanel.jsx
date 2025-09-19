@@ -1,193 +1,191 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './ChatPanel.css';
+import { FaPaperPlane, FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
 
-/**
- * URL 정규화 유틸
- * - \ → /, 선행 / 제거
- * - 'public/' / 'static/docs/' 접두어 제거 후 core 추출
- * - 서버가 내려준 doc_url 우선, 없으면 /static/docs/<core>
- * - 오래된 메타 보호: '/static/docs/public/' · '/static/docs/static/docs/' 중복 접두어 정리
- * - PDF면 #page=<page_start> 앵커 부착
- */
-function buildDocUrl(meta) {
-    if (!meta) return null;
+const SourceCard = ({ source, onSelect, onFeedback, lastQuery }) => {
+    const [feedbackSent, setFeedbackSent] = useState(null);
+    const pageLabel = source.page_start ? `p.${source.page_start}` : null;
 
-    const relRaw = String(meta.doc_relpath || '');
-    const relNorm = relRaw.replace(/\\/g, '/').replace(/^\/+/, '');
-
-    let relCore = relNorm;
-    for (const p of ['public/', 'static/docs/']) {
-        if (relCore.startsWith(p)) relCore = relCore.slice(p.length);
-    }
-
-    let url = meta.doc_url || (relCore ? `/static/docs/${relCore}` : null);
-
-    if (url) {
-        url = url.replace('/static/docs/public/', '/static/docs/');
-        url = url.replace('/static/docs/static/docs/', '/static/docs/');
-    }
-
-    const page = Number(meta.page_start);
-    const anchor =
-        url && url.toLowerCase().endsWith('.pdf') && Number.isFinite(page) && page > 0
-            ? `#page=${page}`
-            : '';
-
-    return url ? url + anchor : null;
-}
-
-export default function ChatPanel({
-    connecting = false,
-    answer = '',
-    sources = [],
-    selectedIndex = null,
-    onAsk,
-    onSelectSource,
-    onFeedback,
-}) {
-    const [q, setQ] = useState('');
-
-    const send = () => {
-        const t = q.trim();
-        if (!t || connecting) return;
-        onAsk?.(t);
+    const handleFeedback = (vote, e) => {
+        e.stopPropagation();
+        if (feedbackSent) return;
+        onFeedback(source.chunk_id, vote, lastQuery);
+        setFeedbackSent(vote);
     };
 
-    const onKey = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            send();
+    return (
+        <div className="source-card" onClick={onSelect}>
+            <div className="source-card-header">
+                <h4 className="source-card-title">{source.doc_title || 'Untitled Document'}</h4>
+                {pageLabel && <span className="source-card-page">{pageLabel}</span>}
+            </div>
+            <p className="source-card-content">{source.content}</p>
+            <div className="feedback-area">
+                {feedbackSent ? (
+                    <span className="feedback-thanks">피드백 주셔서 감사합니다!</span>
+                ) : (
+                    <>
+                        <button className="feedback-btn good" onClick={(e) => handleFeedback('up', e)}>
+                            <FaThumbsUp /> 유용해요
+                        </button>
+                        <button className="feedback-btn bad" onClick={(e) => handleFeedback('down', e)}>
+                            <FaThumbsDown /> 관련 없어요
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default function ChatPanel({
+    connecting,
+    answer,
+    sources,
+    selectedSource,        // (추후 필요 시 사용)
+    onSelectSource,
+    onAsk,
+    onFeedback
+}) {
+    const [history, setHistory] = useState([]);
+    const [question, setQuestion] = useState('');
+    const [lastQuery, setLastQuery] = useState('');
+    const [modalSources, setModalSources] = useState(null);
+    const [showWelcome, setShowWelcome] = useState(true); // ★ 첫 진입 웰컴 말풍선
+    const lastAnswerId = useRef(null);
+    const historyEndRef = useRef(null);
+
+    useEffect(() => {
+        historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [history, connecting]);
+
+    useEffect(() => {
+        if (answer && answer !== lastAnswerId.current) {
+            setHistory(prev => {
+                const newHistory = [...prev];
+                const lastItem = newHistory[newHistory.length - 1];
+                const newAnswerItem = { type: 'bot', content: answer, sources: sources };
+
+                if (lastItem && lastItem.type === 'bot' && lastItem.thinking) {
+                    newHistory[newHistory.length - 1] = newAnswerItem;
+                } else {
+                    newHistory.push(newAnswerItem);
+                }
+                return newHistory;
+            });
+            lastAnswerId.current = answer;
+        }
+    }, [answer, sources]);
+
+    const handleAskSubmit = (e) => {
+        e.preventDefault();
+        if (!question.trim() || connecting) return;
+        onAsk(question);
+        setLastQuery(question);
+        setHistory(prev => [
+            ...prev,
+            { type: 'user', content: question },
+            { type: 'bot', thinking: true }
+        ]);
+        setQuestion('');
+        lastAnswerId.current = null;
+        // 첫 질문 시 웰컴 말풍선 제거
+        if (showWelcome) setShowWelcome(false);
+    };
+
+    const handleBubbleClick = (item) => {
+        if (item.type === 'bot' && item.sources?.length > 0) {
+            onSelectSource(item.sources[0]);
         }
     };
 
     return (
-        <div className="panel">
-            {/* 좌측: 대화/입력 */}
-            <section className="panel__left">
-                <div className="ask">
-                    <textarea
-                        className="ask__input"
-                        placeholder="무엇이든 물어보세요…"
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
-                        onKeyDown={onKey}
-                        disabled={connecting}
-                    />
-                    <div className="ask__actions">
-                        <button className="btn" disabled={connecting || !q.trim()} onClick={send}>
-                            {connecting ? '생성 중…' : '질의'}
-                        </button>
+        <div className="chat-container">
+            <div className="chat-history">
+                {/* ★ 웰컴 말풍선: 첫 진입 시에만 보이고, 질문하면 사라짐 */}
+                {showWelcome && history.length === 0 && (
+                    <div className="chat-bubble bot is-welcome">
+                        안녕하세요! 👋<br />
+                        오른쪽에는 답변의 근거가 된 문서가 미리보기로 표시돼요.<br />
+                        아래 입력창에 질문을 입력해 대화를 시작해 보세요.
                     </div>
-                </div>
+                )}
 
-                <div className="answer">
-                    {answer ? (
-                        <pre className="answer__text">{answer}</pre>
-                    ) : (
-                        <div className="answer__placeholder">답변이 여기에 표시됩니다.</div>
-                    )}
-                </div>
-            </section>
-
-            {/* 우측: 근거 카드 리스트 */}
-            <section className="panel__right">
-                <div className="sources">
-                    <div className="sources__header">
-                        <div className="title">근거 자료</div>
-                        <div className="count">{sources?.length || 0}건</div>
-                    </div>
-
-                    <div className="sources__body">
-                        {(!sources || sources.length === 0) && (
-                            <div className="sources__empty">표시할 근거가 없습니다.</div>
-                        )}
-
-                        {sources?.map((s, i) => {
-                            const href = buildDocUrl(s);
-                            const active = i === selectedIndex;
+                {history.map((item, index) => {
+                    if (item.type === 'user') {
+                        return <div key={index} className="chat-bubble user">{item.content}</div>;
+                    }
+                    if (item.type === 'bot') {
+                        if (item.thinking) {
                             return (
-                                <div
-                                    key={s.chunk_id || i}
-                                    className={`source ${active ? 'source--active' : ''}`}
-                                    onClick={() => onSelectSource?.(s, i)}
-                                    role="button"
-                                    tabIndex={0}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') onSelectSource?.(s, i);
-                                    }}
-                                >
-                                    <div className="source__header">
-                                        <div className="source__title">
-                                            {s.doc_title || s.doc_id || '무제'}
-                                        </div>
-                                        <div className="source__meta">
-                                            {/* 페이지 정보(있을 때만) */}
-                                            {Number.isFinite(Number(s.page_start)) && (
-                                                <span className="pill">p.{Number(s.page_start)}</span>
-                                            )}
-                                            {/* 상태 pill: 링크 유무 안내 */}
-                                            {href ? (
-                                                <span className="pill pill--ok">링크 사용 가능</span>
-                                            ) : (
-                                                <span className="pill pill--muted">링크 없음</span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* 일부 내용 스니펫 */}
-                                    <div className="source__snippet">
-                                        {(s.focus_sentence || s.content || '').slice(0, 220)}
-                                        {(s.focus_sentence || s.content || '').length > 220 ? '…' : ''}
-                                    </div>
-
-                                    <div className="source__footer">
-                                        <div className="source__path">
-                                            {/* 사용자에게 보일 경로 텍스트 (실제 링크는 actions에서 제공) */}
-                                            {s.doc_relpath || s.doc_url || ''}
-                                        </div>
-
-                                        <div className="source__actions">
-                                            <button
-                                                className="btn btn-ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onFeedback?.(s.chunk_id, 'up');
-                                                }}
-                                            >
-                                                👍 좋았어요
-                                            </button>
-
-                                            <button
-                                                className="btn btn-ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onFeedback?.(s.chunk_id, 'down');
-                                                }}
-                                            >
-                                                👎 별로였어요
-                                            </button>
-
-                                            {/* 새 탭으로 문서 열기 (카드 선택과 클릭 이벤트 분리) */}
-                                            {href && (
-                                                <a
-                                                    className="btn btn-ghost"
-                                                    href={href}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    title="문서를 새 탭으로 열기"
-                                                >
-                                                    🔗 문서 열기
-                                                </a>
-                                            )}
-                                        </div>
-                                    </div>
+                                <div key={index} className="chat-bubble thinking">
+                                    <div className="thinking-dot"></div>
+                                    <div className="thinking-dot"></div>
+                                    <div className="thinking-dot"></div>
                                 </div>
                             );
-                        })}
+                        }
+                        return (
+                            <div key={index} className="chat-bubble bot" onClick={() => handleBubbleClick(item)}>
+                                {item.content}
+                                {item.sources && item.sources.length > 0 && (
+                                    <div className="source-button-area">
+                                        <button
+                                            className="btn btn-secondary"
+                                            onClick={(e) => { e.stopPropagation(); setModalSources(item.sources); }}
+                                        >
+                                            근거 보기
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+                    return null;
+                })}
+                <div ref={historyEndRef} />
+            </div>
+
+            {/* 입력 영역 */}
+            <div className="chat-input-area">
+                <form onSubmit={handleAskSubmit} className="chat-input-form">
+                    <input
+                        type="text"
+                        className="chat-input chat-input--lg"  // ★ 더 커진 입력창
+                        placeholder="질문을 입력하세요… (Enter로 전송)"
+                        value={question}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        disabled={connecting}
+                    />
+                    <button type="submit" className="btn btn-primary btn-send" disabled={connecting || !question.trim()}>
+                        <FaPaperPlane />
+                    </button>
+                </form>
+            </div>
+
+            {/* 근거 모달 */}
+            {modalSources && (
+                <div className="source-modal-overlay" onClick={() => setModalSources(null)}>
+                    <div className="source-modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="source-modal-header">
+                            <h3 className="source-modal-title">답변 근거</h3>
+                            <button className="source-modal-close" onClick={() => setModalSources(null)}>&times;</button>
+                        </div>
+                        <div className="source-list">
+                            {modalSources.map((source, index) => (
+                                <SourceCard
+                                    key={source.chunk_id + index}
+                                    source={source}
+                                    lastQuery={lastQuery}
+                                    onSelect={() => { onSelectSource(source); setModalSources(null); }}
+                                    onFeedback={onFeedback}
+                                />
+                            ))}
+                        </div>
                     </div>
                 </div>
-            </section>
+            )}
         </div>
     );
 }

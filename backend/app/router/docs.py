@@ -24,7 +24,7 @@ from app.services.logging import get_logger
 from app.router.auth import current_user
 from app.services.security import has_upload_permission
 from urllib.parse import unquote, quote, urlparse
-from pathlib import Path as PPath
+from pathlib import Path, Path as PPath
 
 # ✅ 벡터스토어/피드백 유틸 임포트 (내 문서 기능)
 from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner
@@ -117,14 +117,13 @@ async def delete_my_doc(doc_id: str, user: AuthUser = Depends(current_user)):
 
     # 3) (폴백) 과거 데이터: URL만 있는 경우 public/<name> 삭제 시도
     if (not rels) and (result.get("doc_urls")):
-        
 
         fallbacks = []
         for u in result["doc_urls"]:
             # /static/docs/<name> → public/<name>
             try:
                 name = u.rsplit("/", 1)[-1]
-                fallbacks.append(str(Path("public") / name))
+                fallbacks.append(str(PPath("public") / name))
             except Exception:
                 pass
         if fallbacks:
@@ -187,7 +186,7 @@ def locate_in_pdf(
             try:
                 parsed = urlparse(in_url)
                 path_part = parsed.path if parsed.scheme else in_url
-                filename = Path(unquote(path_part)).name
+                filename = PPath(unquote(path_part)).name
             except Exception as e:
                 log.warning("[LOCATE] parse in_url failed: %s", e)
                 filename = PPath(unquote(in_url)).name

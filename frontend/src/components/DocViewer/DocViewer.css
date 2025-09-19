@@ -4,10 +4,10 @@
     border-radius: 12px;
     box-shadow: 0 6px 20px rgba(17, 24, 39, .08);
     min-height: 360px;
-    height: calc(100vh - 56px - 160px);
+    height: 100%;
     display: flex;
     flex-direction: column;
-    overflow: hidden
+    overflow: hidden;
 }
 
 .viewer__header {
@@ -16,36 +16,36 @@
     justify-content: space-between;
     padding: 10px 12px;
     border-bottom: 1px solid #e5e7eb;
-    background: #fafafa
+    background: #fafafa;
 }
 
 .viewer__title {
-    font-weight: 600
+    font-weight: 600;
 }
 
 .viewer__body {
-    flex: 1
+    flex: 1;
 }
 
 .viewer__body iframe {
     width: 100%;
     height: 100%;
-    border: 0
+    border: 0;
 }
 
 .viewer__empty {
     padding: 16px;
-    color: #6b7280
+    color: #6b7280;
 }
 
 .btn {
     border: 0;
     border-radius: 12px;
     padding: 10px 14px;
-    cursor: pointer
+    cursor: pointer;
 }
 
 .btn-ghost {
     background: #eef2ff;
-    color: #1f2a62
+    color: #1f2a62;
 }

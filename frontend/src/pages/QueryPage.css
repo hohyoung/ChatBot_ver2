@@ -1,47 +1,40 @@
+/* src/pages/QueryPage.css */
+
 .qgrid {
-    display: grid;
-    gap: 18px;
-    min-height: calc(100vh - 56px);
-    grid-template-columns: minmax(520px, 1fr) minmax(420px, .9fr)
+  /* ★★★ 핵심 수정 ★★★ */
+  /* width를 100%로 설정하고, max-width로 최대 너비를 제한합니다. */
+  width: 100%;
+  max-width: 90%;
+  /* 페이지의 80%를 차지하도록 설정 */
+  margin-left: auto;
+  /* 좌우 여백을 자동으로 설정하여 중앙 정렬 */
+  margin-right: auto;
+  /* 좌우 여백을 자동으로 설정하여 중앙 정렬 */
+
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+
+  /* 헤더(65px)와 상하 여백(16px*2)을 제외한 전체 높이를 차지하도록 설정 */
+  height: calc(100vh - 65px - 32px);
+  box-sizing: border-box;
 }
 
-.qgrid__left {
-    display: flex;
-    flex-direction: column;
-    gap: 16px
-}
-
+/* 내부 스크롤을 위해 필수 */
+.qgrid__left,
 .qgrid__right {
-    display: flex;
-    flex-direction: column;
-    gap: 12px
+  min-height: 0;
 }
 
-@media (max-width:1100px) {
-    .qgrid {
-        grid-template-columns: 1fr
-    }
+/* 작은 화면 대응 */
+@media (max-width: 1100px) {
+  .qgrid {
+    /* 화면이 작아지면 다시 100% 너비를 사용 */
+    max-width: 100%;
+    grid-template-columns: 1fr;
+  }
 
-    .qgrid__right .viewer {
-        height: 480px
-    }
-}
-
-/* === Global fix: primary 버튼은 항상 파란 배경/흰 글자 === */
-button.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-/* .btn(흰 배경)가 나중에 로딩되더라도 .btn.btn-primary가 이김 */
-.btn.btn-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-
-.btn.btn-primary:hover {
-  background: var(--primary-600);
+  .qgrid__right .viewer {
+    height: 480px;
+  }
 }
