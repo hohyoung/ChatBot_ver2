@@ -9,14 +9,11 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db import models as m
 from app.services.security import decode_access_token
-from app.models.schemas import AuthUser
-from app.router.auth import current_user
 
 # docs 라우터가 쓰는 유틸 재사용
 from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner
 from app.services.storage import delete_files_by_relpaths
 from app.services.feedback_store import delete_many as feedback_delete_many
-from app.services.storage import DOCS_DIR
 
 router = APIRouter()
 

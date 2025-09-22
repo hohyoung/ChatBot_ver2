@@ -1,50 +1,65 @@
-# backend/app/router/feedback.py
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 from app.services.logging import get_logger
-from app.models.schemas import FeedbackRequest, FeedbackResponse  # ← 실제 이름에 맞춰 조정
-
-import app.services.feedback_store as _fs  # 모듈 별칭으로 불러와서 .upsert_boost 호출
+from app.models.schemas import FeedbackRequest, FeedbackResponse, FeedbackUpdated
+from app.ingest.tagger import tag_query
+import app.services.feedback_store as _fs  # upsert_boost 호출
 
 router = APIRouter()
 log = get_logger(__name__)
 
+
 @router.post("", response_model=FeedbackResponse)
-def submit_feedback(body: FeedbackRequest):
+async def submit_feedback(body: FeedbackRequest) -> FeedbackResponse:
     """
-    요청 스키마(Strict) 기준:
-      - body.tag_context: List[str]  (과거 query_tags 아님)
-      - body.query: Optional[str]    (과거 question 아님)
+    피드백 수집 엔드포인트.
+    - 프런트가 tag_context를 비워보내도 서버가 question(query)에서 태그를 생성하여 저장합니다.
+    - 레거시 필드(signal, weight)도 하위호환으로 처리합니다.
     """
     try:
-        log.info("feedback body = %s", body.model_dump())
+        if not body.chunk_id:
+            raise ValueError("chunk_id is required")
 
-        # ✅ 필드 매핑: 스키마 → 서비스
+        # 1) vote / weight 하위호환 처리
+        vote = body.vote or body.signal
+        if vote not in ("up", "down"):
+            raise ValueError("vote must be 'up' or 'down'")
+        weight = float(body.weight) if body.weight is not None else 1.0
+
+        # 2) 질문 태그 확보 (클라이언트가 비워 보내면 서버 폴백)
+        query = (body.query or "").strip()
+        query_tags = list(body.tag_context or [])
+        if not query_tags and query:
+            try:
+                query_tags = await tag_query(query, max_tags=6)
+            except Exception:
+                # 태그 생성 실패 → 컨텍스트 없이 진행(전역 피드백으로 저장)
+                query_tags = []
+
+        # 3) 스토어에 누적 및 factor 재계산
         res = _fs.upsert_boost(
-            chunk_id   = body.chunk_id,
-            vote       = body.vote,
-            weight     = (body.weight or 1.0),
-            query_tags = body.tag_context,   # ← 변경 포인트 (query_tags → tag_context)
-            user_id    = None,               # 인증 도입 전까지 None
-            question   = body.query,         # ← 변경 포인트 (question → query)
+            chunk_id=body.chunk_id,
+            vote=vote,
+            weight=weight,
+            query_tags=query_tags,
+            user_id=None,  # JWT 도입 전까지 None
+            question=query or None,
         )
 
-        # ✅ 응답 스키마: ok/updated/error 형태로 래핑
-        #   - 스크립트/클라에서 과거 수치가 필요하면 updated.meta에 포함
-        return {
-            "ok": True,
-            "updated": {
-                "chunk_id": res.get("chunk_id"),
-                "new_boost": res.get("factor"),
-                "meta": {
-                    "fb_pos":  res.get("fb_pos"),
-                    "fb_neg":  res.get("fb_neg"),
-                    "factor":  res.get("factor"),
-                },
+        # 4) 응답 스키마 구성
+        updated = FeedbackUpdated(
+            chunk_id=res.get("chunk_id") or body.chunk_id,
+            delta=res.get("delta"),
+            new_boost=res.get("factor"),
+            meta={
+                "fb_pos": res.get("fb_pos"),
+                "fb_neg": res.get("fb_neg"),
+                "factor": res.get("factor"),
             },
-            "error": None,
-        }
+        )
+        return FeedbackResponse(ok=True, updated=updated, error=None)
 
     except Exception as e:
         log.exception("feedback error: %s", e)
-        # 스키마 일관성을 위해 error 채워서 반환
         raise HTTPException(status_code=500, detail=str(e))

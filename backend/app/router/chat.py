@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from app.rag.retriever import retrieve
 from app.rag.generator import generate_answer
 from app.services.idgen import new_id
@@ -26,8 +27,11 @@ async def chat_ws(ws: WebSocket):
         # 프론트 → 백: 문자열만 수신 (요구사항 2-1)
         question = await ws.receive_text()
 
-        # 아직 태거 미사용: 빈 리스트
-        used_tags: list[str] = []
+        # ✅ 질문 태깅 활성화 (실패 시 빈 리스트)
+        try:
+            used_tags: list[str] = await tag_query(question, max_tags=6)
+        except Exception:
+            used_tags = []
 
         # 후보 검색 → 답변 생성
         candidates = await retrieve(question, used_tags)
@@ -55,24 +59,23 @@ async def chat_ws(ws: WebSocket):
         await ws.send_json(err.model_dump(mode="json"))
 
 
-
-#디버그용
-@router.post("/debug")
-async def chat_debug(question: str = Body(..., embed=True)):
-    t0 = time.perf_counter()
-    try:
-        tags = await tag_query(question)
-    except Exception:
-        tags = []
-    cands = await retrieve(question, tags, k=5)
-    answer, used_chunks = await generate_answer(question, cands)
-    return {
-        "type": "final",
-        "data": {
-            "answer": answer,
-             "chunks": [c.model_dump() for c in used_chunks],
-            "answer_id": new_id("ans"),
-            "used_tags": tags,
-            "latency_ms": int((time.perf_counter() - t0) * 1000),
-        },
-    }
+# # 디버그용
+# @router.post("/debug")
+# async def chat_debug(question: str = Body(..., embed=True)):
+#     t0 = time.perf_counter()
+#     try:
+#         tags = await tag_query(question)
+#     except Exception:
+#         tags = []
+#     cands = await retrieve(question, tags, k=5)
+#     answer, used_chunks = await generate_answer(question, cands)
+#     return {
+#         "type": "final",
+#         "data": {
+#             "answer": answer,
+#             "chunks": [c.model_dump() for c in used_chunks],
+#             "answer_id": new_id("ans"),
+#             "used_tags": tags,
+#             "latency_ms": int((time.perf_counter() - t0) * 1000),
+#         },
+#     }

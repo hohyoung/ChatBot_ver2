@@ -124,15 +124,44 @@ def get_boost_map(
     chunk_ids: List[str], query_tags: Optional[List[str]] = None
 ) -> Dict[str, float]:
     """
-    리트리버가 사용하는 부스트 맵. 현재는 전역 factor만 사용(태그별은 차후 확장).
+    리트리버가 사용하는 부스트 맵.
+    - 현재 질문 태그(query_tags)와 교집합이 있는 피드백 이력만 우선 반영
+    - 교집합이 전혀 없으면 전역 factor(fb_pos/fb_neg 기반)로 폴백
     """
     out: Dict[str, float] = {}
+    qtags = [str(t).lower() for t in (query_tags or [])]
+
     for cid in chunk_ids:
         doc = _load(_file_path(cid))
-        out[cid] = float(doc.get("factor", 1.0) or 1.0)
+        # 전역 누적
+        g_pos = int(doc.get("fb_pos") or 0)
+        g_neg = int(doc.get("fb_neg") or 0)
+
+        # 태그 교집합 기반 누적
+        c_pos = c_neg = 0
+        hist = doc.get("history") or []
+        if qtags and isinstance(hist, list):
+            for ev in hist:
+                ev_tags = [str(t).lower() for t in (ev.get("query_tags") or [])]
+                if not ev_tags:
+                    continue
+                if set(qtags) & set(ev_tags):
+                    if ev.get("vote") == "up":
+                        c_pos += 1
+                    elif ev.get("vote") == "down":
+                        c_neg += 1
+
+        # 베이지안 추정(라플라스 스무딩) → factor 0.5~1.5 매핑
+        if (c_pos + c_neg) > 0:
+            p = (c_pos + 1.0) / (c_pos + c_neg + 2.0)
+        else:
+            p = (g_pos + 1.0) / (g_pos + g_neg + 2.0)
+        out[cid] = round(0.5 + float(p), 6)
 
     if out:
-        log.info("[feedback] boost_map: %s", {k: round(v, 4) for k, v in out.items()})
+        log.info(
+            "[feedback] boost_map(ctx)=%s", {k: round(v, 4) for k, v in out.items()}
+        )
     return out
 
 

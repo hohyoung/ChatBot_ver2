@@ -13,9 +13,6 @@ from app.router.auth import router as auth_router  # /api/auth/*
 from app.router.admin import router as admin_router
 
 
-DOCS_DIR = Path("storage/docs")
-(DOCS_DIR / "public").mkdir(parents=True, exist_ok=True)
-
 setup_logging()
 
 app = FastAPI(

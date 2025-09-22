@@ -49,8 +49,6 @@ def _get_or_create_collection():
     return _collection
 
 
-# 과거 스니펫 호환용 별칭
-_ensure_collection = _get_or_create_collection
 
 
 # 외부에서 쓸 공식 접근자
