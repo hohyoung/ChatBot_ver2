@@ -1,8 +1,9 @@
 // ======================================================
 // Base settings
 // ======================================================
-const BASE = "/api"; // Vite devServer proxy -> http://localhost:8000
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+//const BASE = "/api"; // Vite devServer proxy -> http://localhost:8000
+//const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+const API_BASE = "http://192.68.10.249:8082/api";
 export { API_BASE };
 
 const TOKEN_KEY = "auth_token";
@@ -55,7 +56,7 @@ function clearAuthToken() {
 
 async function http(method, path, body, opts = {}) {
     // 1) URL + 쿼리
-    let url = path.startsWith("http") ? path : `${BASE}${path}`;
+    let url = path.startsWith("http") ? path : `${API_BASE}${path}`;
     if (opts && opts.params) url += toQuery(opts.params);
 
     // 2) Authorization 자동 주입
