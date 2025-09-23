@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./UploadPage.css";
-import { get, getAuthToken } from "../api/http.js";
+import { get, getAuthToken, docsApi } from "../api/http.js";
 import { me as fetchMe } from "../store/auth.js";
 import {
     FaFileUpload,
@@ -140,7 +140,7 @@ export default function UploadPage() {
     };
 
     const upload = async () => {
-        if (!canUploadByLevel) return; // 안전장치
+        if (!canUploadByLevel) return;
         if (files.length === 0) {
             setErrorMsg("업로드할 파일을 선택해주세요.");
             return;
@@ -152,22 +152,8 @@ export default function UploadPage() {
         formData.append("visibility", "public");
 
         try {
-            const token = getAuthToken();
-            const headers = {};
-            if (token) headers["Authorization"] = `Bearer ${token}`;
-
-            const response = await fetch("/api/docs/upload", { method: "POST", body: formData, headers });
-            const result = await response.json();
-
-            if (!response.ok) {
-                if (result?.detail) {
-                    const details = Array.isArray(result.detail)
-                        ? result.detail.map((e) => `${(e.loc || []).join(".")}: ${e.msg}`).join(", ")
-                        : (result.detail.message || result.detail);
-                    throw new Error(`[${response.status}] ${details}`);
-                }
-                throw new Error(`[${response.status}] ${response.statusText}`);
-            }
+            // 💡 복잡한 fetch 로직이 이 한 줄로 깔끔하게 정리됩니다.
+            const result = await docsApi.upload(formData);
 
             setJob(result);
             if (result?.job_id) pollStatus(result.job_id);
