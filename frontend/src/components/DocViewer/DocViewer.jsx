@@ -75,7 +75,7 @@ export default function DocViewer({ source }) {
                         </div>
                     )
                 ) : (
-                    <div className="viewer__empty">문서 URL이 있을 때 미리보기가 표시됩니다.</div>
+                    <div className="viewer__empty">PDF 뷰어입니다. 답변의 근거 자료를 띄워줍니다. 다른 형식의 파일의 경우 링크를 띄웁니다.</div>
                 )}
             </div>
         </div>

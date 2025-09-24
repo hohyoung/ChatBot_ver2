@@ -159,7 +159,12 @@ export default function UploadPage() {
             if (result?.job_id) pollStatus(result.job_id);
         } catch (err) {
             console.error("Upload failed:", err);
-            setErrorMsg(err?.message || "파일 업로드에 실패했습니다.");
+            // 💡 413 에러 코드를 확인하는 로직 추가
+            if (err.status === 413) {
+                setErrorMsg("업로드 용량이 너무 큽니다. 한 번에 100MB 이하로 업로드해주세요.");
+            } else {
+                setErrorMsg(err?.message || "파일 업로드에 실패했습니다.");
+            }
         }
     };
 
@@ -205,13 +210,14 @@ export default function UploadPage() {
         <div className="upload-page">
             <h2>문서 업로드</h2>
 
-
             <div className="info-banner">
                 <FaInfoCircle />
                 <p>
                     <strong>PDF 형식의 파일을 권장합니다.</strong>
                     <br />
                     PDF로 업로드 시, 문서 미리보기가 가능해 품질 좋은 답변을 얻을 수 있습니다.
+                    <br />
+                    <strong>한 번에 100MB까지 업로드할 수 있습니다.</strong>
                 </p>
             </div>
 
@@ -243,7 +249,8 @@ export default function UploadPage() {
                         <div className="blocked-overlay">
                             <FaLock />
                             <div className="blocked-text">
-                                {showLoginGuard ? "로그인 후 이용 가능합니다" : "업로드 권한이 없습니다"}
+                                {isUploading ? "업로드 처리 중입니다... 잠시만 기다려주세요." :
+                                    showLoginGuard ? "로그인 후 이용 가능합니다" : "업로드 권한이 없습니다"}
                             </div>
                         </div>
                     )}
