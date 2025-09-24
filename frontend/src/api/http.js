@@ -2,9 +2,9 @@
 // Base settings
 // ======================================================
 
-const API_BASE = "http://192.68.10.249:8082/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 // 💡 '/api'를 제거하여 정적 파일(문서, 이미지 등)을 위한 기본 주소를 만듭니다.
-const STATIC_BASE = API_BASE.replace("/api", "");
+const STATIC_BASE = (import.meta.env.VITE_API_BASE || "").replace("/api", "");
 
 export { API_BASE, STATIC_BASE }; // 💡 STATIC_BASE도 export 해줍니다.
 const TOKEN_KEY = "auth_token";
