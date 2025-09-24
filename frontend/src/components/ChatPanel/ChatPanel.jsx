@@ -108,7 +108,9 @@ export default function ChatPanel({
                     <div className="chat-bubble bot is-welcome">
                         안녕하세요! 👋<br />
                         오른쪽에는 답변의 근거가 된 문서가 미리보기로 표시돼요.<br />
-                        아래 입력창에 질문을 입력해 대화를 시작해 보세요.
+                        아래 입력창에 질문을 입력해 대화를 시작해 보세요.<br />
+                        문서 내 표나 그림 등의 내용은 답변하기 어려워요!
+
                     </div>
                 )}
 
@@ -135,7 +137,7 @@ export default function ChatPanel({
                                             className="btn btn-secondary"
                                             onClick={(e) => { e.stopPropagation(); setModalSources(item.sources); }}
                                         >
-                                            근거 보기
+                                            상세 근거 문서
                                         </button>
                                     </div>
                                 )}
@@ -152,7 +154,7 @@ export default function ChatPanel({
                 <form onSubmit={handleAskSubmit} className="chat-input-form">
                     <input
                         type="text"
-                        className="chat-input chat-input--lg"  // ★ 더 커진 입력창
+                        className="chat-input chat-input--lg"  
                         placeholder="질문을 입력하세요… (Enter로 전송)"
                         value={question}
                         onChange={(e) => setQuestion(e.target.value)}
@@ -169,7 +171,7 @@ export default function ChatPanel({
                 <div className="source-modal-overlay" onClick={() => setModalSources(null)}>
                     <div className="source-modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="source-modal-header">
-                            <h3 className="source-modal-title">답변 근거</h3>
+                            <h3 className="source-modal-title">답변 근거 (클릭시 이동)</h3>
                             <button className="source-modal-close" onClick={() => setModalSources(null)}>&times;</button>
                         </div>
                         <div className="source-list">
