@@ -1,6 +1,7 @@
 // src/components/DocViewer/DocViewer.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "./DocViewer.css";
+import { STATIC_BASE } from "../../api/http.js";
 
 function buildDocUrl(meta) {
     if (!meta) return null;
@@ -25,7 +26,7 @@ function buildDocUrl(meta) {
             ? `#page=${page}`
             : "";
 
-    return url ? url + anchor : null;
+    return url ? (url.startsWith("/") ? STATIC_BASE + url : url) + anchor : null;
 }
 
 function isPdfUrl(url) {
