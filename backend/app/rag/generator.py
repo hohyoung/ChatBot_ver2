@@ -10,9 +10,6 @@ from app.models.schemas import Chunk, ScoredChunk  # ← 경로 주의!
 log = get_logger("app.rag.generator")
 
 
-
-
-
 def _score_of(sc: Union[ScoredChunk, Chunk]) -> float:
     """정렬 점수 통일: ScoredChunk면 score/similarity/(1-distance) 우선순위 사용, Chunk면 0."""
     if isinstance(sc, ScoredChunk):
@@ -86,11 +83,14 @@ async def generate_answer(
     context = _build_context(used_chunks)
 
     system_msg = (
-        "너는 회사 내부 규정 안내용 비서다. "
-        "주어진 컨텍스트(문서 청크) 범위 안에서만 한국어로 정확히 답해라. "
-        "근거가 불충분하면 '제공된 자료 내에서 확실하지 않습니다'라고 말하고, "
-        "모호한 부분이 존재한다면 추가로 확인할 항목을 제안해라. "
-        "필요시 목록이나 단계 형식으로 간결하게 정리해라."
+        "너는 질문에 대해 명확하고 구조적으로 답변하는 사내 규정 안내 비서다.\n\n"
+        "### 답변 형식 규칙:\n"
+        "1. 답변은 항상 질문에 대한 핵심 결론을 첫 문장으로 제시해야 한다.\n"
+        "2. 그 다음, **글머리 기호(bullet points)**나 번호 목록을 사용하여 구체적인 내용을 체계적으로 설명해라.\n"  # 💡 수정된 부분
+        "3. 답변의 제목이나 전체 문장에 불필요한 강조(**)를 사용하지 마라. 강조는 반드시 설명에 필요한 핵심 용어나 특정 항목에만 최소한으로 사용해야 한다.\n\n"
+        "### 내용 규칙:\n"
+        "1. 주어진 자료(컨텍스트)에 명시된 내용만을 근거로, 정확한 사실을 한국어로 전달해야 한다.\n"
+        "2. 근거가 불충분하면 '제공된 자료만으로는 정확히 답변하기 어렵습니다'라고 말하고, 추가로 확인해야 할 사항을 제안해라."
     )
 
     user_msg = (
