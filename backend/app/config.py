@@ -1,11 +1,16 @@
 import os
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from dotenv import load_dotenv
 
-# .env 로드 (운영 배포에서는 OS 환경변수/시크릿 매니저로 주입 권장)
-load_dotenv()
+# 이 config.py 파일의 위치를 기준으로 .env 파일의 절대 경로를 계산합니다.
+# (config.py -> app 폴더 -> backend 폴더)
+backend_dir = Path(__file__).resolve().parent.parent
+dotenv_path = backend_dir / ".env"
 
+# 💡 계산된 절대 경로를 사용하여 .env 파일을 명시적으로 로드합니다.
+load_dotenv(dotenv_path=dotenv_path)
 
 def _getenv(name: str, default: str | None = None) -> str | None:
     return os.getenv(name, default)
