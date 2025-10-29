@@ -54,28 +54,36 @@ export default function ChatPanel({
     const [lastQuery, setLastQuery] = useState('');
     const [modalSources, setModalSources] = useState(null);
     const [showWelcome, setShowWelcome] = useState(true); // ★ 첫 진입 웰컴 말풍선
-    const lastAnswerId = useRef(null);
     const historyEndRef = useRef(null);
 
     useEffect(() => {
         historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [history, connecting]);
 
+    // 스트리밍 응답 처리: answer가 변경될 때마다 마지막 bot 메시지 업데이트
     useEffect(() => {
-        if (answer && answer !== lastAnswerId.current) {
+        if (answer) {
             setHistory(prev => {
                 const newHistory = [...prev];
                 const lastItem = newHistory[newHistory.length - 1];
-                const newAnswerItem = { type: 'bot', content: answer, sources: sources };
 
-                if (lastItem && lastItem.type === 'bot' && lastItem.thinking) {
-                    newHistory[newHistory.length - 1] = newAnswerItem;
+                // 마지막 항목이 bot 메시지(thinking 포함)라면 업데이트
+                if (lastItem && lastItem.type === 'bot') {
+                    newHistory[newHistory.length - 1] = {
+                        type: 'bot',
+                        content: answer,
+                        sources: sources
+                    };
                 } else {
-                    newHistory.push(newAnswerItem);
+                    // 마지막 항목이 bot이 아니면 새로 추가 (이론적으로 발생하지 않아야 함)
+                    newHistory.push({
+                        type: 'bot',
+                        content: answer,
+                        sources: sources
+                    });
                 }
                 return newHistory;
             });
-            lastAnswerId.current = answer;
         }
     }, [answer, sources]);
 
@@ -90,7 +98,6 @@ export default function ChatPanel({
             { type: 'bot', thinking: true }
         ]);
         setQuestion('');
-        lastAnswerId.current = null;
         // 첫 질문 시 웰컴 말풍선 제거
         if (showWelcome) setShowWelcome(false);
     };

@@ -1,29 +1,17 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import DOMPurify from 'dompurify';
 import './MarkdownRenderer.css';
 
 /**
  * 마크다운 렌더링 컴포넌트
- * - XSS 방지 (DOMPurify)
+ * - XSS 방지 (react-markdown 내장)
  * - 조항 하이라이트 (제\d+조)
  * - GFM 지원 (테이블, 취소선 등)
  */
 export default function MarkdownRenderer({ content }) {
-    // XSS 방지: DOMPurify로 정제
-    const sanitizedContent = useMemo(() => {
-        return DOMPurify.sanitize(content, {
-            ALLOWED_TAGS: [
-                'p', 'br', 'strong', 'em', 'u', 'code', 'pre',
-                'ul', 'ol', 'li', 'blockquote',
-                'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                'a', 'span'
-            ],
-            ALLOWED_ATTR: ['href', 'class', 'id', 'target', 'rel']
-        });
-    }, [content]);
+    // react-markdown은 기본적으로 안전한 렌더링을 제공하므로
+    // 별도의 sanitize 처리가 필요 없습니다.
 
     // 조항 하이라이트 처리 (제\d+조, 제\d+항)
     const highlightLegalClauses = (text) => {
@@ -94,7 +82,7 @@ export default function MarkdownRenderer({ content }) {
                 remarkPlugins={[remarkGfm]}
                 components={components}
             >
-                {sanitizedContent}
+                {content}
             </ReactMarkdown>
         </div>
     );
