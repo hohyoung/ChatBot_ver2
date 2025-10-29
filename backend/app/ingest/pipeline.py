@@ -21,6 +21,8 @@ from app.ingest.parsers.pdf import parse_pdf
 from app.ingest.parsers.docx import parse_docx
 from app.ingest.parsers.txt import parse_txt
 from app.ingest.parsers.html import parse_html
+from app.ingest.parsers.image_extractor import extract_images_from_pdf
+from app.ingest.parsers.vision_processor import batch_process_images
 
 log = get_logger("app.ingest.pipeline")
 
@@ -143,6 +145,72 @@ def _merge_with_pages(
 
 
 # --------------------------------------------------------------------------
+# 이미지 처리 헬퍼 (P0-2)
+# --------------------------------------------------------------------------
+async def _process_pdf_images(
+    file_path: Path,
+    doc_id: str,
+) -> List[Tuple[int, str, str, str]]:
+    """
+    PDF에서 이미지를 추출하고 Vision API로 처리.
+
+    반환값: List[(page_num, image_type, image_content, description)]
+      - page_num: 페이지 번호 (1-based)
+      - image_type: "table" | "figure"
+      - image_content: 마크다운 표 또는 그림 설명
+      - description: 로그용 설명
+    """
+    try:
+        # 1) 이미지 추출
+        log.info(f"[IMAGE] Extracting images from {file_path.name}")
+        extracted_images = extract_images_from_pdf(file_path)
+
+        if not extracted_images:
+            log.info(f"[IMAGE] No images found in {file_path.name}")
+            return []
+
+        log.info(f"[IMAGE] Found {len(extracted_images)} images in {file_path.name}")
+
+        # 2) Vision API로 배치 처리
+        log.info(f"[IMAGE] Processing images with Vision API...")
+        results = await batch_process_images(extracted_images, max_concurrent=3)
+
+        # 3) 결과 변환
+        image_chunks = []
+
+        # 표 처리
+        for img, markdown in results.get("tables", []):
+            image_chunks.append((
+                img.page_num,
+                "table",
+                markdown,
+                f"Table {img.image_index} on page {img.page_num}"
+            ))
+
+        # 그림 처리
+        for img, description in results.get("figures", []):
+            image_chunks.append((
+                img.page_num,
+                "figure",
+                description,
+                f"Figure {img.image_index} on page {img.page_num}"
+            ))
+
+        log.info(
+            f"[IMAGE] Processed {len(image_chunks)} images: "
+            f"{len(results.get('tables', []))} tables, "
+            f"{len(results.get('figures', []))} figures, "
+            f"{len(results.get('failed', []))} failed"
+        )
+
+        return image_chunks
+
+    except Exception as e:
+        log.error(f"[IMAGE] Failed to process images from {file_path.name}: {e}")
+        return []
+
+
+# --------------------------------------------------------------------------
 # 업로드 잡 처리
 # --------------------------------------------------------------------------
 async def process_job(
@@ -246,6 +314,27 @@ async def process_job(
                         file_path.name,
                     )
                     page_ranges = [(1, 1) for _ in range(len(chunks_text))]
+
+                # 2-1) PDF 이미지 처리 (P0-2)
+                image_chunks_data = await _process_pdf_images(file_path, doc_id)
+
+                # 이미지 청크 정보 저장 (나중에 Chunk 객체 생성 시 사용)
+                # image_metadata: Dict[int, Tuple[str, str]]  # chunk_index -> (img_type, img_content)
+                image_metadata = {}
+
+                # 이미지 청크를 텍스트 청크와 병합
+                for page_num, img_type, img_content, img_desc in image_chunks_data:
+                    # 이미지를 별도 청크로 추가
+                    chunk_idx = len(chunks_text)
+                    chunks_text.append(img_content)
+                    page_ranges.append((page_num, page_num))
+                    image_metadata[chunk_idx] = (img_type, img_content)
+
+                log.info(
+                    f"[INGEST] Total chunks after images: {len(chunks_text)} "
+                    f"(text + {len(image_chunks_data)} images)"
+                )
+
             else:
                 # (비-PDF) 기존 블록 병합 파이프라인
                 blocks = _parse_by_type(file_path)
@@ -256,6 +345,7 @@ async def process_job(
                     continue
                 chunks_text = merge_blocks_to_chunks(blocks)
                 page_ranges = [(None, None)] * len(chunks_text)
+                image_metadata = {}  # 비-PDF는 이미지 없음
 
             avg_len = sum(len(c) for c in chunks_text) / max(1, len(chunks_text))
             log.info(
@@ -299,6 +389,14 @@ async def process_job(
                 p_start, p_end = (
                     page_ranges[i] if i < len(page_ranges) else (None, None)
                 )
+
+                # 이미지 메타데이터 확인 (P0-2)
+                has_image = i in image_metadata
+                img_type = None
+                img_content = None
+                if has_image:
+                    img_type, img_content = image_metadata[i]
+
                 chunks.append(
                     Chunk(
                         doc_id=doc_id,
@@ -315,6 +413,10 @@ async def process_job(
                         owner_username=owner_username,
                         page_start=p_start if is_pdf else None,
                         page_end=p_end if is_pdf else None,
+                        # 이미지 메타데이터 (P0-2)
+                        has_image=has_image,
+                        image_type=img_type,
+                        image_content=img_content,
                     )
                 )
             log.info("built chunks file=%s count=%d", file_path.name, len(chunks))

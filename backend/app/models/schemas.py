@@ -77,6 +77,16 @@ class Chunk(StrictModel):
     page_start: Optional[int] = Field(default=None, description="시작 페이지(1-base)")
     page_end: Optional[int] = Field(default=None, description="끝 페이지(1-base)")
 
+    # 이미지 메타데이터 (P0-2: 표/그림 인식)
+    has_image: bool = Field(default=False, description="이 청크가 이미지를 포함하는지 여부")
+    image_type: Optional[Literal["table", "figure"]] = Field(
+        default=None, description="이미지 타입: table(표) 또는 figure(그림)"
+    )
+    image_content: Optional[str] = Field(
+        default=None,
+        description="이미지 내용: 표의 마크다운 또는 그림 설명"
+    )
+
     @field_validator("tags", mode="before")
     @classmethod
     def _v_tags(cls, v):

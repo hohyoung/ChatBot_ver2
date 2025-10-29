@@ -79,17 +79,23 @@
 **우선순위:** 최우선 🔴
 
 #### 작업 항목
-- [ ] PyMuPDF로 이미지 추출 (3일)
-- [ ] OpenAI Vision API 표 변환 (4일)
-- [ ] 그림 설명 생성 (3일)
-- [ ] 청킹 통합 (2일)
+- [x] PyMuPDF로 이미지 추출 (3일)
+- [x] OpenAI Vision API 표 변환 (4일)
+- [x] 그림 설명 생성 (3일)
+- [x] 청킹 통합 (2일)
 
 #### AC
-- [ ] 표 인식률 ≥85%
-- [ ] 표 기반 질의 정답률 향상
-- [ ] 그림 설명 포함된 답변 생성
+- [ ] 표 인식률 ≥85% (테스트 필요)
+- [ ] 표 기반 질의 정답률 향상 (테스트 필요)
+- [ ] 그림 설명 포함된 답변 생성 (테스트 필요)
 
 **참고:** 구현 상세 → @LLD.md 섹션 4.2
+
+**구현 완료 내역:**
+- `backend/app/ingest/parsers/image_extractor.py` - PyMuPDF 이미지 추출
+- `backend/app/ingest/parsers/vision_processor.py` - Vision API 처리
+- `backend/app/models/schemas.py` - Chunk 스키마 확장
+- `backend/app/ingest/pipeline.py` - 파이프라인 통합
 
 ---
 
