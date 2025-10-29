@@ -1,0 +1,133 @@
+.markdown-renderer {
+    line-height: 1.6;
+    color: #333;
+}
+
+/* 조항 하이라이트 */
+.legal-clause-highlight {
+    background-color: #fff3cd;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    color: #856404;
+}
+
+/* 인라인 코드 */
+.inline-code {
+    background-color: #f4f4f4;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    color: #c7254e;
+}
+
+/* 코드 블록 */
+.code-block {
+    background-color: #f8f8f8;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 12px 0;
+}
+
+.code-block code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+    color: #333;
+}
+
+/* 테이블 */
+.table-wrapper {
+    overflow-x: auto;
+    margin: 16px 0;
+}
+
+.markdown-table {
+    border-collapse: collapse;
+    width: 100%;
+    background-color: white;
+}
+
+.markdown-table th {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.markdown-table td {
+    border: 1px solid #dee2e6;
+    padding: 10px;
+}
+
+.markdown-table tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* 목록 */
+.markdown-renderer ul,
+.markdown-renderer ol {
+    margin: 8px 0;
+    padding-left: 24px;
+}
+
+.markdown-renderer li {
+    margin: 4px 0;
+}
+
+/* 강조 */
+.markdown-renderer strong {
+    font-weight: 700;
+    color: #1a73e8;
+}
+
+/* 제목 */
+.markdown-renderer h1,
+.markdown-renderer h2,
+.markdown-renderer h3 {
+    margin-top: 16px;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.markdown-renderer h1 {
+    font-size: 1.5em;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 4px;
+}
+
+.markdown-renderer h2 {
+    font-size: 1.3em;
+}
+
+.markdown-renderer h3 {
+    font-size: 1.1em;
+}
+
+/* 링크 */
+.markdown-renderer a {
+    color: #1a73e8;
+    text-decoration: none;
+}
+
+.markdown-renderer a:hover {
+    text-decoration: underline;
+}
+
+/* 인용구 */
+.markdown-renderer blockquote {
+    border-left: 4px solid #e0e0e0;
+    padding-left: 12px;
+    margin: 12px 0;
+    color: #666;
+    font-style: italic;
+}
+
+/* 단락 */
+.markdown-renderer p {
+    margin: 8px 0;
+}

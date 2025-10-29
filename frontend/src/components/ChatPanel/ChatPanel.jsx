@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import './ChatPanel.css';
 import { FaPaperPlane, FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
+import MarkdownRenderer from '../MarkdownRenderer';
 
 const SourceCard = ({ source, onSelect, onFeedback, lastQuery }) => {
     const [feedbackSent, setFeedbackSent] = useState(null);
@@ -130,7 +131,7 @@ export default function ChatPanel({
                         }
                         return (
                             <div key={index} className="chat-bubble bot" onClick={() => handleBubbleClick(item)}>
-                                {item.content}
+                                <MarkdownRenderer content={item.content} />
                                 {item.sources && item.sources.length > 0 && (
                                     <div className="source-button-area">
                                         <button

@@ -47,10 +47,12 @@ export default function QueryPage() {
 
         wsRef.current = openChatSocket(q, {
             onMessage: (msg) => {
-                if (msg?.type === 'chunk' && msg.delta) {
-                    setAnswer((prev) => prev + msg.delta);
+                // 토큰 이벤트: 스트리밍 중
+                if (msg?.type === 'token' && msg.token) {
+                    setAnswer((prev) => prev + msg.token);
                     return;
                 }
+                // 최종 이벤트: 스트리밍 완료
                 if (msg?.type === 'final' && msg.data) {
                     setAnswer(msg.data.answer ?? '');
                     setSources(msg.data.chunks ?? msg.data.sources ?? []);
@@ -58,6 +60,15 @@ export default function QueryPage() {
                     cleanupWS();
                     return;
                 }
+                // 에러 이벤트
+                if (msg?.type === 'error') {
+                    console.error('Chat error:', msg.error);
+                    setAnswer('오류가 발생했습니다: ' + (msg.error || '알 수 없는 오류'));
+                    setConnecting(false);
+                    cleanupWS();
+                    return;
+                }
+                // 레거시 형식 지원 (하위 호환)
                 if (msg?.answer !== undefined) {
                     setAnswer(msg.answer || '');
                     setSources(msg.sources || []);

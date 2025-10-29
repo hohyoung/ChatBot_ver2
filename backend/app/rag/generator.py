@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Tuple, Any, Dict, Union
+from typing import List, Tuple, Any, Dict, Union, AsyncIterator
 
 from app.services.openai_client import get_client
 from app.config import settings
@@ -72,6 +72,42 @@ def _build_context(chunks: List[Chunk]) -> str:
     return "\n".join(lines).strip()
 
 
+def _get_system_prompt() -> str:
+    """
+    챗봇 페르소나 시스템 프롬프트.
+    페르소나: 사내 규정 안내 전문가 (Knowledge Navigator)
+    """
+    return (
+        "당신은 **사내 규정 안내 전문가(Knowledge Navigator)**입니다.\n"
+        "사내 문서와 규정을 기반으로 직원들에게 정확하고 유용한 정보를 제공하는 것이 목표입니다.\n\n"
+
+        "## 응답 원칙\n"
+        "1. **근거 기반**: 제공된 문서의 내용만을 근거로 답변하세요. 추측이나 외부 지식을 사용하지 마세요.\n"
+        "2. **조항 명시**: 관련 규정이나 조항이 있다면 반드시 명시하세요 (예: '제10조', '제2항').\n"
+        "3. **친절하고 명확하게**: 전문 용어를 쉽게 풀어서 설명하고, 구조적으로 정리해서 답변하세요.\n"
+        "4. **마크다운 활용**: 마크다운 문법을 사용하여 가독성 높은 답변을 작성하세요.\n"
+        "5. **불확실성 인정**: 근거가 불충분하면 솔직히 인정하고, 추가로 확인할 방법을 안내하세요.\n\n"
+
+        "## 마크다운 출력 가이드\n"
+        "- **제목**: 답변의 핵심 결론을 첫 문장으로 제시 (제목 마크다운 불필요)\n"
+        "- **목록**: 여러 항목은 `-` 또는 `1.`로 구조화\n"
+        "- **강조**: 핵심 용어나 수치만 **굵게** 표시 (과도한 강조 금지)\n"
+        "- **조항**: 관련 조항은 `제10조`, `제2항`처럼 명시\n"
+        "- **표**: 비교가 필요하면 마크다운 표 사용\n\n"
+
+        "## 예시\n"
+        "질문: '연차는 몇 일인가요?'\n"
+        "답변:\n"
+        "입사 2년차의 경우 연차는 **15일**입니다.\n\n"
+        "연차 일수는 근속 연수에 따라 다음과 같이 부여됩니다:\n"
+        "- 1년 미만: **11일**\n"
+        "- 1~2년: **15일**\n"
+        "- 3~4년: **16일**\n"
+        "- 5년 이상: 2년마다 1일 가산 (최대 25일)\n\n"
+        "관련 규정: **제10조 (연차휴가)**"
+    )
+
+
 async def generate_answer(
     question: str, candidates: List[Union[ScoredChunk, Chunk]]
 ) -> Tuple[str, List[Chunk]]:
@@ -82,16 +118,7 @@ async def generate_answer(
     used_chunks: List[Chunk] = _select_chunks(candidates, max_chars=6000)
     context = _build_context(used_chunks)
 
-    system_msg = (
-        "너는 질문에 대해 명확하고 구조적으로 답변하는 사내 규정 안내 비서다.\n\n"
-        "### 답변 형식 규칙:\n"
-        "1. 답변은 항상 질문에 대한 핵심 결론을 첫 문장으로 제시해야 한다.\n"
-        "2. 그 다음, **글머리 기호(bullet points)**나 번호 목록을 사용하여 구체적인 내용을 체계적으로 설명해라.\n" 
-        "3. 답변의 제목이나 전체 문장에 불필요한 강조(**)를 사용하지 마라. 강조는 반드시 설명에 필요한 핵심 용어나 특정 항목에만 최소한으로 사용해야 한다.\n\n"
-        "### 내용 규칙:\n"
-        "1. 주어진 자료(컨텍스트)에 명시된 내용만을 근거로, 정확한 사실을 한국어로 전달해야 한다.\n"
-        "2. 근거가 불충분하면 '제공된 자료만으로는 정확히 답변하기 어렵습니다'라고 말하고, 추가로 확인해야 할 사항을 제안해라."
-    )
+    system_msg = _get_system_prompt()
 
     user_msg = (
         f"질문:\n{question}\n\n"
@@ -113,3 +140,47 @@ async def generate_answer(
     answer = resp.choices[0].message.content.strip() if resp.choices else ""
 
     return answer, used_chunks
+
+
+async def generate_answer_stream(
+    question: str, candidates: List[Union[ScoredChunk, Chunk]]
+) -> AsyncIterator[Tuple[str, List[Chunk] | None]]:
+    """
+    질문 + 후보 청크들로 답변을 스트리밍 생성.
+
+    Yields:
+        (token, None) - 토큰 단위 스트리밍
+        ("", used_chunks) - 최종 청크 리스트 (스트림 끝)
+    """
+    used_chunks: List[Chunk] = _select_chunks(candidates, max_chars=6000)
+    context = _build_context(used_chunks)
+
+    system_msg = _get_system_prompt()
+    user_msg = (
+        f"질문:\n{question}\n\n"
+        f"다음은 검색된 관련 문서 청크들이다. "
+        f"이 정보만 사용해서 답변해라.\n\n"
+        f"{context}"
+    )
+
+    client = get_client()
+
+    # 스트리밍 모드로 호출
+    stream = client.chat.completions.create(
+        model=settings.openai_model,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        temperature=0.2,
+        stream=True,  # 스트리밍 활성화
+    )
+
+    # 토큰 단위로 yield
+    for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            token = chunk.choices[0].delta.content
+            yield (token, None)
+
+    # 스트림 종료 시 청크 리스트 반환
+    yield ("", used_chunks)
