@@ -13,7 +13,6 @@ from app.models.schemas import (
     ChatErrorEvent,
     ChatErrorData,
 )
-from fastapi import Body
 from app.ingest.tagger import tag_query
 
 router = APIRouter()
@@ -71,23 +70,3 @@ async def chat_ws(ws: WebSocket):
         await ws.send_json(err.model_dump(mode="json"))
 
 
-# # 디버그용
-# @router.post("/debug")
-# async def chat_debug(question: str = Body(..., embed=True)):
-#     t0 = time.perf_counter()
-#     try:
-#         tags = await tag_query(question)
-#     except Exception:
-#         tags = []
-#     cands = await retrieve(question, tags, k=5)
-#     answer, used_chunks = await generate_answer(question, cands)
-#     return {
-#         "type": "final",
-#         "data": {
-#             "answer": answer,
-#             "chunks": [c.model_dump() for c in used_chunks],
-#             "answer_id": new_id("ans"),
-#             "used_tags": tags,
-#             "latency_ms": int((time.perf_counter() - t0) * 1000),
-#         },
-#     }

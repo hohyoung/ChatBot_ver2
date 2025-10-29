@@ -13,3 +13,4 @@ sqlalchemy>=2.0
 passlib[bcrypt]>=1.7
 email-validator>=2.1
 pyodbc
+boto3>=1.34.0

@@ -62,30 +62,8 @@ def _is_pdf(ftype) -> bool:
         return False
 
 
-def _debug(msg, *a):
-    # 필요 시 log.debug로 바꿔도 됩니다.
-    print(f"[INGEST][DEBUG] " + (str(msg) % a if a else str(msg)))
 
 
-def _assert_contract(doc_relpath: str | None, doc_url: str | None):
-    """계약: doc_relpath는 public/…, doc_url은 /static/docs/… (public 없음)"""
-    ok = True
-    if (
-        not doc_url
-        or not isinstance(doc_url, str)
-        or not doc_url.startswith("/static/docs/")
-    ):
-        _debug("❌ doc_url invalid: %r", doc_url)
-        ok = False
-    if (
-        not doc_relpath
-        or not isinstance(doc_relpath, str)
-        or not doc_relpath.replace("\\", "/").startswith("public/")
-    ):
-        _debug("❌ doc_relpath invalid: %r", doc_relpath)
-        ok = False
-    if ok:
-        _debug("✅ contract ok: rel=%s url=%s", doc_relpath, doc_url)
 
 
 # --------------------------------------------------------------------------
@@ -302,7 +280,6 @@ async def process_job(
                 log.warning("publish_doc failed file=%s err=%s", file_path.name, e)
 
             log.info("[INGEST] contract rel=%r url=%r", doc_relpath, doc_url)
-            _assert_contract(doc_relpath, doc_url)
 
             # 5) 태그 생성/정규화
             try:
