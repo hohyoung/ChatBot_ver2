@@ -62,9 +62,9 @@ class JobStore:
         with self._lock:
             j = self._jobs.get(job_id)
             if not j:
-                return IngestJobStatus(status="pending", processed=0, errors=[])
+                return IngestJobStatus(status="pending", processed=0, total=0, errors=[])
             return IngestJobStatus(
-                status=j.status, processed=j.processed, errors=list(j.errors)
+                status=j.status, processed=j.processed, total=j.total, errors=list(j.errors)
             )
 
 

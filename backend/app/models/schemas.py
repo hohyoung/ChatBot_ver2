@@ -197,6 +197,7 @@ class UploadDocsResponse(StrictModel):
 class IngestJobStatus(StrictModel):
     status: Literal["pending", "running", "succeeded", "failed"]
     processed: int = 0
+    total: int = 0
     errors: List[str] = Field(default_factory=list)
 
 
