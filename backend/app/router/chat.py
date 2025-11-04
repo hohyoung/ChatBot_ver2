@@ -7,6 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.rag.retriever import retrieve
 from app.rag.generator import generate_answer_stream
 from app.services.idgen import new_id
+from app.services.faq import log_question
 from app.models.schemas import (
     ChatTokenEvent,
     ChatFinalEvent,
@@ -73,16 +74,23 @@ async def chat_ws(ws: WebSocket):
         logger.info(f"Total RAG pipeline time: {total_ms:.1f} ms")
 
         # 최종 응답 전송
+        answer_id = new_id("ans")
         final_msg = ChatFinalEvent(
             data=ChatFinalData(
                 answer=full_answer,
                 chunks=used_chunks or [],
-                answer_id=new_id("ans"),
+                answer_id=answer_id,
                 used_tags=used_tags,
                 latency_ms=int(total_ms),
             )
         )
         await ws.send_json(final_msg.model_dump(mode="json"))
+
+        # 질문 로그 저장 (FAQ 생성용)
+        try:
+            await log_question(question, answer_id)
+        except Exception as log_err:
+            logger.warning(f"질문 로그 저장 실패 (무시): {log_err}")
 
     except WebSocketDisconnect:
         # 클라이언트가 연결을 끊음

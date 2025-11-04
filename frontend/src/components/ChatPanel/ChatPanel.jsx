@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import './ChatPanel.css';
 import { FaPaperPlane, FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
 import MarkdownRenderer from '../MarkdownRenderer';
+import FAQList from '../FAQ/FAQList';
 
 const SourceCard = ({ source, onSelect, onFeedback, lastQuery }) => {
     const [feedbackSent, setFeedbackSent] = useState(null);
@@ -108,9 +109,21 @@ export default function ChatPanel({
         }
     };
 
+    const handleFAQClick = (faqQuestion) => {
+        // FAQ 클릭 시 질문 입력창에 자동 입력
+        setQuestion(faqQuestion);
+        // 웰컴 메시지 제거
+        if (showWelcome) setShowWelcome(false);
+    };
+
     return (
         <div className="chat-container">
             <div className="chat-history">
+                {/* FAQ 리스트: 대화 시작 전에만 표시 */}
+                {history.length === 0 && (
+                    <FAQList onQuestionClick={handleFAQClick} />
+                )}
+
                 {/* ★ 웰컴 말풍선: 첫 진입 시에만 보이고, 질문하면 사라짐 */}
                 {showWelcome && history.length === 0 && (
                     <div className="chat-bubble bot is-welcome">

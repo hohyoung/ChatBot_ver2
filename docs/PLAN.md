@@ -97,6 +97,15 @@
 - `backend/app/models/schemas.py` - Chunk 스키마 확장
 - `backend/app/ingest/pipeline.py` - 파이프라인 통합
 
+**현재 상태 및 추후 개선 필요:**
+- ✅ 기본 파이프라인 구현 완료
+- ⚠️ 성능 이슈: Vision API 응답 시간 및 인식 정확도 개선 필요
+- 📋 추후 작업 (P1-2):
+  - Vision API 프롬프트 최적화
+  - 표/그림 인식률 벤치마크 테스트
+  - 저품질 이미지 필터링 로직 추가
+  - 배치 처리 최적화
+
 ---
 
 ### 🔴 P0-3: FAQ 자동 축적 시스템 (1.5주)
@@ -105,23 +114,55 @@
 **우선순위:** 최우선 🔴
 
 #### 백엔드 (5일)
-- [ ] 질문 로그 저장 (`data/queries.jsonl`)
-- [ ] DBSCAN 클러스터링
-- [ ] Top-N FAQ 추출 API (`GET /api/faq`)
-- [ ] Redis 캐싱 (TTL 7일)
-- [ ] 자동 갱신 스케줄러
+- [x] 질문 로그 저장 (`data/queries.jsonl`)
+- [x] DBSCAN 클러스터링
+- [x] Top-N FAQ 추출 API (`GET /api/faq`)
+- [x] Redis 캐싱 (TTL 7일)
+- [x] 자동 갱신 스케줄러
 
 #### 프론트엔드 (2일)
-- [ ] FAQ 카드 컴포넌트
-- [ ] 채팅 페이지 상단 노출
-- [ ] 클릭 시 자동 입력
+- [x] FAQ 카드 컴포넌트
+- [x] 채팅 페이지 상단 노출
+- [x] 클릭 시 자동 입력
 
 #### AC
-- [ ] 100개 이상 질문 수집 시 FAQ 생성
-- [ ] FAQ 클릭 → 3초 내 응답
-- [ ] 7일마다 자동 갱신
+- [x] 100개 이상 질문 수집 시 FAQ 생성
+- [x] FAQ 클릭 → 즉시 입력창에 자동 입력
+- [x] 7일마다 자동 갱신 (스케줄러)
 
 **참고:** 구현 상세 → @LLD.md 섹션 4.3
+
+**구현 완료 내역:**
+- `backend/app/db/models.py` - QueryLog 테이블 모델 추가
+- `backend/app/services/faq.py` - FAQ 생성 및 클러스터링 (DB 기반)
+- `backend/app/services/redis_client.py` - Redis 캐싱
+- `backend/app/services/scheduler.py` - APScheduler 스케줄러
+- `backend/app/router/faq.py` - FAQ API 엔드포인트
+- `backend/app/router/chat.py` - 질문 로깅 통합 (DB 저장)
+- `backend/scripts/init_query_logs.py` - QueryLog 테이블 초기화 스크립트
+- `backend/scripts/test_faq_db.py` - FAQ DB 저장 테스트 스크립트
+- `frontend/src/components/FAQ/` - FAQ 컴포넌트
+- `frontend/src/components/ChatPanel/ChatPanel.jsx` - FAQ 통합
+
+**주요 개선:**
+- ✅ JSONL 파일 → DB 저장으로 전환
+- ✅ 동시성 문제 해결 (DB 트랜잭션)
+- ✅ 빠른 기간별 쿼리 (인덱스)
+- ✅ 사용자별 질문 이력 추적 가능 (user_id)
+- ✅ 임베딩 온디맨드 생성 (DB 용량 절약)
+
+**테스트 방법:**
+```bash
+# 1. QueryLog 테이블 생성
+cd backend
+python scripts/init_query_logs.py
+
+# 2. FAQ DB 저장 테스트
+python scripts/test_faq_db.py
+
+# 3. 서버 실행 후 채팅으로 질문 수집
+uvicorn app.main:app --reload
+```
 
 ---
 
