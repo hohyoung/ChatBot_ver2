@@ -1,59 +1,146 @@
 /* ===== Chat container ===== */
 .chat-container {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     height: 100%;
-    background-color: var(--surface);
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
+    background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+    border: 1px solid #e9ecef;
+    border-radius: 20px;
     overflow: hidden;
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
     position: relative;
+}
+
+/* 메인 채팅 영역 */
+.chat-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+}
+
+/* ===== Chat Header ===== */
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid #e9ecef;
+    background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+}
+
+.btn-new-chat,
+.btn-faq-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid #e9ecef;
+    background: #ffffff;
+    color: #495057;
+}
+
+.btn-new-chat:hover:not(:disabled),
+.btn-faq-header:hover {
+    background: #f1f3f5;
+    border-color: #dee2e6;
+}
+
+.btn-new-chat:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-new-chat svg,
+.btn-faq-header svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 새 대화 버튼 활성 스타일 */
+.btn-new-chat:not(:disabled):hover {
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+    border-color: #a5d6a7;
+    color: #2e7d32;
+}
+
+/* FAQ 버튼 활성 상태 */
+.btn-faq-header.active {
+    background: linear-gradient(135deg, #0a4d9a 0%, #0066cc 100%);
+    border-color: #0a4d9a;
+    color: white;
 }
 
 .chat-history {
     flex-grow: 1;
-    padding: 24px;
+    padding: 32px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
 }
 
 /* 말풍선 */
 .chat-bubble {
-    max-width: 80%;
-    padding: 12px 18px;
-    border-radius: 20px;
-    line-height: 1.6;
+    max-width: 75%;
+    padding: 16px 20px;
+    border-radius: 18px;
+    line-height: 1.7;
     word-break: break-word;
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    animation: slideIn 0.3s ease-out;
+}
+
+/* 사용자 메시지는 pre-wrap 유지 (일반 텍스트) */
+.chat-bubble.user {
     white-space: pre-wrap;
 }
 
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .chat-bubble.user {
-    background-color: var(--accent-blue);
+    background: linear-gradient(135deg, #0a4d9a 0%, #0066cc 100%);
     color: #fff;
-    border-bottom-right-radius: 4px;
+    border-bottom-right-radius: 6px;
     align-self: flex-end;
+    white-space: pre-wrap;
 }
 
 .chat-bubble.bot {
-    background-color: #e9ecef;
+    background-color: #ffffff;
     color: var(--text-primary);
-    border-bottom-left-radius: 4px;
+    border: 1px solid #e9ecef;
+    border-bottom-left-radius: 6px;
     align-self: flex-start;
-    cursor: pointer;
-    transition: background-color .2s;
-}
-
-.chat-bubble.bot:hover {
-    background-color: #dee2e6;
 }
 
 .chat-bubble.is-welcome {
-    background: #eef6ff;
-    border: 1px solid #dbeafe;
+    background: linear-gradient(135deg, #f0f7ff 0%, #e6f2ff 100%);
+    border: 1px solid #bfdbfe;
+    padding: 20px 24px;
+}
+
+.welcome-note {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.9em;
+    color: #64748b;
+    font-style: italic;
 }
 
 .chat-bubble.thinking {
@@ -93,212 +180,649 @@
     }
 }
 
-/* 입력 영역 */
+/* ===== GAR 진행 단계 애니메이션 ===== */
+.loading-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    animation: slideIn 0.3s ease-out;
+    align-self: flex-start;
+    max-width: 75%;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border: 1px solid #e9ecef;
+    border-radius: 18px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.stage-icon {
+    font-size: 52px;
+    margin-bottom: 16px;
+    animation: iconBounce 1s ease-in-out infinite;
+}
+
+.stage-message {
+    font-size: 15px;
+    color: #495057;
+    font-weight: 500;
+    margin: 0 0 12px 0;
+    animation: fadeIn 0.5s ease-in;
+    text-align: center;
+}
+
+.stage-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.stage-dots span {
+    font-size: 24px;
+    color: #868e96;
+    animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+.stage-dots span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.stage-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.stage-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes iconBounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes dotPulse {
+    0%, 100% {
+        opacity: 0.3;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+/* 연결 중 상태 (초기 로딩) */
+.loading-stage.connecting {
+    padding: 32px 24px;
+    gap: 16px;
+}
+
+.loading-stage.connecting .stage-message {
+    margin: 0;
+    color: #6b7280;
+}
+
+/* 연결 실패 상태 */
+.loading-stage.connection-failed {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 1px solid #fca5a5;
+    padding: 32px 24px;
+    gap: 12px;
+    animation: slideIn 0.3s ease-out, shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+}
+
+.loading-stage.connection-failed .error-icon {
+    font-size: 48px;
+    color: #dc2626;
+    margin-bottom: 8px;
+    animation: none;
+}
+
+.connection-failed-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.loading-stage.connection-failed .error-title {
+    color: #991b1b;
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.loading-stage.connection-failed .error-detail {
+    color: #7f1d1d;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.loading-stage.connection-failed .error-contact {
+    font-size: 12px;
+    color: #b91c1c;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.5);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
+/* 연결 복구 상태 */
+.loading-stage.connection-recovered {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border: 1px solid #6ee7b7;
+    padding: 32px 24px;
+    gap: 12px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.loading-stage.connection-recovered .success-icon {
+    font-size: 48px;
+    color: #059669;
+    margin-bottom: 8px;
+    animation: none;
+}
+
+.connection-recovered-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.loading-stage.connection-recovered .success-title {
+    color: #047857;
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.loading-stage.connection-recovered .success-detail {
+    color: #065f46;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* ===== Input Area ===== */
 .chat-input-area {
-    padding: 16px;
-    border-top: 1px solid var(--border-color);
-    background-color: #f8f9fa;
+    padding: 20px 24px;
+    border-top: 1px solid #e9ecef;
+    background: linear-gradient(to top, #ffffff, #f8f9fa);
 }
 
 .chat-input-form {
     display: flex;
     gap: 12px;
+    align-items: center;
 }
 
 .chat-input {
     flex-grow: 1;
-    padding: 12px 16px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border-color);
-    background-color: var(--surface);
+    padding: 14px 20px;
+    border-radius: 14px;
+    border: 2px solid #e9ecef;
+    background-color: #ffffff;
     color: var(--text-primary);
-    font-size: 1rem;
-    transition: all .2s;
+    font-size: 15px;
+    transition: all 0.2s ease;
+    font-family: inherit;
 }
 
 .chat-input:focus {
     outline: none;
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(10, 77, 154, .15);
+    box-shadow: 0 0 0 4px rgba(10, 77, 154, 0.1);
+    background-color: #ffffff;
 }
 
-/* 입력창 확대(≈48px) */
+.chat-input::placeholder {
+    color: #adb5bd;
+}
+
+/* 입력창 확대 */
 .chat-input--lg {
-    padding: 14px 18px;
-    font-size: 1.05rem;
-    min-height: 48px;
+    padding: 15px 20px;
+    font-size: 15px;
+    min-height: 52px;
 }
 
-/* ★ 전송 버튼: 전역 .btn 규칙보다 우선 적용되도록 특이성/!important 사용 */
+/* 전송 버튼 */
 .chat-input-form .btn-send,
 .chat-input-form button.btn-send,
 .chat-input-form .btn.btn-send {
-    width: 48px !important;
-    height: 48px !important;
-    flex: 0 0 48px !important;
+    width: 52px !important;
+    height: 52px !important;
+    flex: 0 0 52px !important;
     padding: 0 !important;
-    border-radius: 12px;
+    border-radius: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    background: linear-gradient(135deg, #0a4d9a 0%, #0066cc 100%);
+    border: none;
+    box-shadow: 0 4px 12px rgba(10, 77, 154, 0.3);
+    transition: all 0.2s ease;
+}
+
+.chat-input-form .btn-send:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(10, 77, 154, 0.4);
+}
+
+.chat-input-form .btn-send:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .chat-input-form .btn-send svg {
     width: 20px;
     height: 20px;
+    color: white;
 }
 
-/* 근거 버튼/모달 등 이하 동일 */
-.source-button-area {
-    margin-top: 12px;
-    border-top: 1px solid #ced4da;
-    padding-top: 12px;
+
+/* ===== Document Badges ===== */
+.source-docs-area {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e9ecef;
 }
 
-.source-modal-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0, 0, 0, .4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10;
-}
-
-.source-modal-content {
-    background: var(--surface);
-    padding: 8px;
-    border-radius: 16px;
-    width: 90%;
-    max-width: 600px;
-    max-height: 80%;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
-}
-
-.source-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    flex-shrink: 0;
-}
-
-.source-modal-title {
-    font-size: 1.2rem;
+.source-docs-label {
+    font-size: 13px;
     font-weight: 600;
-    color: var(--accent-blue);
+    color: #64748b;
+    margin-bottom: 10px;
 }
 
-.source-modal-close {
-    background: none;
-    border: none;
-    color: #868e96;
-    font-size: 1.8rem;
-    cursor: pointer;
-    line-height: 1;
-}
-
-.source-modal-close:hover {
-    color: var(--text-primary);
-}
-
-.source-list {
-    overflow-y: auto;
+.source-docs-list {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 8px;
-    padding: 0 16px 16px;
 }
 
-.source-card {
-    padding: 14px;
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    transition: background-color .2s, border-color .2s;
-}
-
-.source-card:hover {
-    background-color: var(--interactive-bg);
-    border-color: #c4c9cf;
-}
-
-.source-card-header {
-    display: flex;
-    justify-content: space-between;
+.source-doc-badge {
+    display: inline-flex;
     align-items: center;
-    margin-bottom: 8px;
+    gap: 8px;
+    padding: 8px 14px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
 }
 
-.source-card-title {
-    font-weight: 600;
-    color: var(--text-primary);
+.source-doc-badge:hover {
+    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+    border-color: #adb5bd;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.doc-badge-icon {
+    font-size: 16px;
+}
+
+.doc-badge-title {
+    font-weight: 500;
+    color: #212529;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.source-card-page {
+.doc-badge-page {
     background-color: var(--accent-blue);
-    color: #fff;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 8px;
+    margin-left: 4px;
+}
+
+
+/* ===== FAQ Side Panel (Desktop) ===== */
+.faq-panel {
+    width: 0;
+    min-width: 0;
+    height: 100%;
+    background: #ffffff;
+    border-left: 1px solid #e9ecef;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+.faq-panel.open {
+    width: 320px;
+    min-width: 320px;
+}
+
+.faq-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e9ecef;
+    background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+}
+
+.faq-panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #212529;
+}
+
+.faq-panel-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #868e96;
+    cursor: pointer;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.faq-panel-close:hover {
+    background: #f1f3f4;
+    color: #495057;
+}
+
+.faq-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+/* FAQ 오버레이 (데스크톱에서는 숨김) */
+.faq-overlay {
+    display: none;
+}
+
+/* ===== Mobile Styles ===== */
+@media (max-width: 768px) {
+    .chat-container {
+        flex-direction: column;
+    }
+
+    /* 모바일: 채팅 헤더 */
+    .chat-header {
+        padding: 10px 16px;
+    }
+
+    .btn-new-chat,
+    .btn-faq-header {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    /* 모바일: FAQ 패널을 바텀 시트로 변환 */
+    .faq-panel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100% !important;
+        min-width: 100% !important;
+        height: 0;
+        max-height: 70vh;
+        border-left: none;
+        border-top: 1px solid #e9ecef;
+        border-radius: 20px 20px 0 0;
+        z-index: 1000;
+        transform: translateY(100%);
+        transition: transform 0.3s ease, height 0.3s ease;
+    }
+
+    .faq-panel.open {
+        height: auto;
+        min-height: 300px;
+        transform: translateY(0);
+    }
+
+    .faq-panel-header {
+        cursor: grab;
+        border-radius: 20px 20px 0 0;
+        position: relative;
+        padding-top: 24px;
+    }
+
+    /* 드래그 핸들 표시 */
+    .faq-panel-header::before {
+        content: '';
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 4px;
+        background: #dee2e6;
+        border-radius: 2px;
+    }
+
+    .faq-panel-content {
+        max-height: calc(70vh - 80px);
+    }
+
+    /* 모바일: 오버레이 표시 */
+    .faq-overlay {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        animation: fadeIn 0.3s ease;
+    }
+}
+
+/* 패널 내 FAQ 리스트 스타일 */
+.faq-list-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.faq-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: #868e96;
+    font-size: 14px;
+}
+
+
+/* ===== Source Images (표/그림 원본 이미지) ===== */
+.source-images-area {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed #dee2e6;
+}
+
+.source-images-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.source-images-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.source-image-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    max-width: 160px;
+}
+
+.source-image-card:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.source-image-thumb {
+    width: 140px;
+    height: 100px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid #e9ecef;
+}
+
+.source-image-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
     font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 99px;
-    flex-shrink: 0;
+    color: #495057;
 }
 
-.source-card-content {
-    margin: 0;
-    font-size: 14px;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+.source-image-label svg {
+    width: 12px;
+    height: 12px;
+    color: #6b7280;
 }
 
-.feedback-area {
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-color);
+
+/* ===== Image Modal (이미지 확대 모달) ===== */
+.image-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 2000;
     display: flex;
-    gap: 8px;
     align-items: center;
-}
-
-.feedback-btn {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 4px 10px;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
     cursor: pointer;
-    font-size: 14px;
-    transition: all .2s;
 }
 
-.feedback-btn:hover {
-    background: var(--interactive-bg);
-    border-color: #c4c9cf;
+.image-modal-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: slideIn 0.3s ease;
 }
 
-.feedback-btn.good:hover {
-    background: #dcfce7;
-    border-color: #86efac;
+.image-modal-close {
+    position: absolute;
+    top: -50px;
+    right: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
 }
 
-.feedback-btn.bad:hover {
-    background: #fee2e2;
-    border-color: #fca5a5;
+.image-modal-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
 }
 
-.feedback-thanks {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--accent-blue);
+.image-modal-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.image-modal-img {
+    max-width: 100%;
+    max-height: calc(90vh - 60px);
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    background: white;
+}
+
+.image-modal-hint {
+    margin-top: 16px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+
+/* ===== Mobile: Source Images ===== */
+@media (max-width: 768px) {
+    .source-images-list {
+        flex-direction: row;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .source-image-card {
+        flex: 0 0 auto;
+    }
+
+    .source-image-thumb {
+        width: 120px;
+        height: 80px;
+    }
+
+    .image-modal-content {
+        max-width: 95vw;
+        max-height: 80vh;
+    }
+
+    .image-modal-close {
+        top: -45px;
+        right: 5px;
+    }
 }

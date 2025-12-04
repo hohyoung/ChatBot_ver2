@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import "./UploadPage.css";
-import { get, getAuthToken, docsApi } from "../api/http.js";
+import { get, docsApi } from "../api/http.js";
 import { me as fetchMe } from "../store/auth.js";
 import {
     FaFileUpload,
@@ -15,6 +15,12 @@ import {
 
 /* 상태 표시 */
 const StatusDisplay = ({ status, job }) => {
+    // 진행률 계산
+    const getProgress = () => {
+        if (!status || !status.total || status.total === 0) return 0;
+        return Math.round((status.processed / status.total) * 100);
+    };
+
     if (!status && !job) {
         return (
             <div className="status-item info">
@@ -49,12 +55,19 @@ const StatusDisplay = ({ status, job }) => {
         );
     }
     if (status?.status === "running") {
+        const progress = getProgress();
         return (
             <div className="status-item processing">
                 <div className="status-icon"><FaSpinner className="fa-spin" /></div>
                 <div className="status-content">
-                    <h4>인덱싱 작업 중…</h4>
+                    <h4>인덱싱 작업 중… {progress}%</h4>
                     <p>총 {status.total ?? "-"}개 중 {status.processed ?? 0}개 처리 완료</p>
+                    <div className="progress-bar-container">
+                        <div
+                            className="progress-bar-fill"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
                 </div>
             </div>
         );
@@ -65,7 +78,10 @@ const StatusDisplay = ({ status, job }) => {
                 <div className="status-icon"><FaCheckCircle /></div>
                 <div className="status-content">
                     <h4>업로드 성공</h4>
-                    <p>모든 파일의 인덱싱이 완료되었습니다.</p>
+                    <p>모든 파일의 인덱싱이 완료되었습니다. 이제 검색에서 사용할 수 있습니다.</p>
+                    <div className="progress-bar-container">
+                        <div className="progress-bar-fill complete" style={{ width: '100%' }} />
+                    </div>
                 </div>
             </div>
         );
@@ -100,9 +116,39 @@ export default function UploadPage() {
     const isUploading = status?.status === "running" || status?.status === "pending" || (job && !status);
     const disabled = !canUploadByLevel || isUploading; // 비로그인 or 4등급 or 업로딩 중
 
+    // 진행 중인 업로드 작업 복원
+    const restoreActiveJobs = useCallback(async () => {
+        try {
+            const result = await docsApi.activeJobs();
+            const jobs = result?.jobs || [];
+
+            if (jobs.length > 0) {
+                // 가장 최근 진행 중인 job을 복원
+                const activeJob = jobs[0];
+                console.log("[UploadPage] Restoring active job:", activeJob);
+
+                setJob({ job_id: activeJob.job_id, accepted: activeJob.total });
+                // 폴링 시작
+                pollStatus(activeJob.job_id);
+            }
+        } catch (err) {
+            console.error("[UploadPage] Failed to restore active jobs:", err);
+        }
+    }, []);
+
     useEffect(() => {
         (async () => {
-            try { setUser(await fetchMe()); } catch { setUser(null); }
+            try {
+                const userData = await fetchMe();
+                setUser(userData);
+
+                // 로그인된 사용자인 경우 진행 중인 작업 복원
+                if (userData) {
+                    await restoreActiveJobs();
+                }
+            } catch {
+                setUser(null);
+            }
         })();
 
         // ⬇ 로그인/로그아웃 시 페이지 새로고침
@@ -118,10 +164,24 @@ export default function UploadPage() {
             window.removeEventListener("auth:changed", onAuthChanged);
             window.removeEventListener("storage", onStorage);
         };
-    }, []);
+    }, [restoreActiveJobs]);
 
-    const pollStatus = (job_id) => {
+    const pollStatus = async (job_id) => {
         if (timerRef.current) clearInterval(timerRef.current);
+
+        // 즉시 첫 번째 상태 조회 (폴링 시작 전)
+        try {
+            const initialStat = await get(`/docs/${encodeURIComponent(job_id)}/status`);
+            setStatus(initialStat);
+            if (initialStat.status === "succeeded" || initialStat.status === "failed") {
+                setFiles([]);
+                return; // 이미 완료됨, 폴링 불필요
+            }
+        } catch (e) {
+            console.error("Initial status fetch failed:", e);
+        }
+
+        // 이후 주기적 폴링
         timerRef.current = setInterval(async () => {
             try {
                 const stat = await get(`/docs/${encodeURIComponent(job_id)}/status`);

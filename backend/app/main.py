@@ -71,6 +71,13 @@ PUBLIC_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 # /static/docs/<파일명> 으로 접근 가능
 app.mount("/static/docs", StaticFiles(directory=str(PUBLIC_DOCS_DIR)), name="docs")
 
+# 정적 이미지 서빙 (표/그림 원본 이미지)
+IMAGES_DIR = Path("storage/images")
+IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+# /static/images/<파일명> 으로 접근 가능
+app.mount("/static/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
+
 # 라우터 등록
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(docs_router, prefix="/api/docs", tags=["docs"])

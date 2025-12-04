@@ -51,7 +51,7 @@ class Chunk(StrictModel):
         default=None, description="문서 유형(e.g. policy-manual)"
     )
     doc_title: Optional[str] = Field(default=None, description="문서 표시용 제목")
-    visibility: Literal["private", "org", "public"] = Field(default="org")
+    visibility: Literal["private", "org", "public", "pending"] = Field(default="org")
     tags: List[str] = Field(default_factory=list, description="정규화된 태그 목록")
     content: str = Field(..., description="청크 텍스트 본문")
     doc_url: Optional[str] = Field(
@@ -85,6 +85,27 @@ class Chunk(StrictModel):
     image_content: Optional[str] = Field(
         default=None,
         description="이미지 내용: 표의 마크다운 또는 그림 설명"
+    )
+    image_url: Optional[str] = Field(
+        default=None,
+        description="원본 이미지 URL (예: /static/images/doc_abc123/0005_table.png)"
+    )
+
+    # 문서 구조 메타데이터 (P0-2.5: 구조 기반 청킹)
+    section_title: Optional[str] = Field(
+        default=None, description="조항 제목 (예: '제1조 (목적)')"
+    )
+    article_number: Optional[str] = Field(
+        default=None, description="조항 번호 (예: '1')"
+    )
+    hierarchy_level: Optional[int] = Field(
+        default=None, description="계층 레벨 (1=조항, 2=항, 3=호, 4=목)"
+    )
+    parent_article: Optional[str] = Field(
+        default=None, description="상위 조항 번호 (하위 항목인 경우)"
+    )
+    is_complete_article: Optional[bool] = Field(
+        default=None, description="완전한 조항인지 여부 (True=완전, False=부분)"
     )
 
     @field_validator("tags", mode="before")
@@ -138,9 +159,21 @@ class ChatRequest(StrictModel):
     question: str
 
 
+class ImageRef(StrictModel):
+    """이미지 참조 정보 (LLM 응답의 [IMG1] 등을 실제 URL로 매핑)"""
+    ref: str  # "[IMG1]", "[IMG2]" 등
+    url: str  # 실제 이미지 URL
+    type: str  # "table" 또는 "figure"
+    doc_title: Optional[str] = None
+    page: Optional[int] = None
+
+
 class ChatAnswer(StrictModel):
     answer: str
     chunks: List[Chunk] = Field(default_factory=list)
+
+    # 이미지 참조 매핑 (LLM 응답의 [IMG1] → 실제 URL)
+    image_refs: List[ImageRef] = Field(default_factory=list)
 
     # 디버깅/추적용
     answer_id: Optional[str] = None
@@ -162,9 +195,18 @@ class ChatDebugResponse(StrictModel):
     version: str = Field(default=SCHEMA_VERSION)
 
 
-class ChatTokenEvent(StrictModel):
+class ChatTokenEvent(BaseModel):
+    """토큰 스트리밍 이벤트 - 줄바꿈/공백 보존을 위해 StrictModel 대신 BaseModel 사용"""
+    model_config = ConfigDict(extra="forbid")  # str_strip_whitespace 제외!
     type: Literal["token"] = "token"
     token: str
+
+
+class ChatStageEvent(StrictModel):
+    """GAR 파이프라인 진행 단계 이벤트"""
+    type: Literal["stage"] = "stage"
+    stage: Literal["intent", "expand", "search", "rerank", "generate"]
+    message: str
 
 
 class ChatFinalEvent(StrictModel):
@@ -178,7 +220,7 @@ class ChatErrorEvent(StrictModel):
 
 
 ChatEvent = Annotated[
-    Union[ChatTokenEvent, ChatFinalEvent, ChatErrorEvent],
+    Union[ChatTokenEvent, ChatStageEvent, ChatFinalEvent, ChatErrorEvent],
     Field(discriminator="type"),
 ]
 
@@ -291,6 +333,69 @@ FeedbackOut = FeedbackResponse  # alias
 
 
 # -------------------------------------------------------------------
+# 문서 검색/통계 스키마 (P0-4)
+# -------------------------------------------------------------------
+
+
+class DocSearchQuery(StrictModel):
+    """문서 검색 쿼리 파라미터"""
+    keyword: Optional[str] = Field(default=None, description="문서명/내용 키워드")
+    tags: Optional[List[str]] = Field(default=None, description="태그 필터 (OR 검색)")
+    doc_type: Optional[str] = Field(default=None, description="문서 유형 필터")
+    owner_username: Optional[str] = Field(default=None, description="업로더 필터")
+    visibility: Optional[str] = Field(default=None, description="공개 범위 필터")
+    year: Optional[int] = Field(default=None, description="연도 필터 (uploaded_at 기준)")
+    limit: int = Field(default=50, ge=1, le=200, description="최대 결과 수")
+    offset: int = Field(default=0, ge=0, description="페이지네이션 오프셋")
+
+
+class DocSearchResult(StrictModel):
+    """문서 검색 결과 아이템"""
+    doc_id: str
+    doc_title: Optional[str] = None
+    doc_type: Optional[str] = None
+    doc_url: Optional[str] = None
+    doc_relpath: Optional[str] = None
+    visibility: Optional[str] = None
+    owner_username: Optional[str] = None
+    chunk_count: int = 0
+    uploaded_at: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    # 요약 (향후 LLM으로 생성)
+    summary: Optional[str] = Field(default=None, description="문서 요약")
+
+
+class DocSearchResponse(StrictModel):
+    """문서 검색 응답"""
+    items: List[DocSearchResult]
+    total: int
+    limit: int
+    offset: int
+
+
+class DocStatsResponse(StrictModel):
+    """문서 통계"""
+    total_docs: int
+    total_chunks: int
+    by_type: Dict[str, int] = Field(default_factory=dict)
+    by_visibility: Dict[str, int] = Field(default_factory=dict)
+    by_owner: Dict[str, int] = Field(default_factory=dict)
+    recent_uploads: int = Field(default=0, description="최근 7일 내 업로드 수")
+
+
+class LibrarianRequest(StrictModel):
+    """챗봇 사서 요청 (자연어 문서 검색)"""
+    query: str = Field(..., description="자연어 검색 쿼리 (예: '기숙사 규정 보고싶어')")
+
+
+class LibrarianResponse(StrictModel):
+    """챗봇 사서 응답 (선택된 문서 리스트)"""
+    selected_doc_ids: List[str] = Field(default_factory=list, description="선택된 문서 ID 리스트")
+    selected_titles: List[str] = Field(default_factory=list, description="선택된 문서 제목 리스트")
+    explanation: str = Field(default="", description="선택 이유")
+
+
+# -------------------------------------------------------------------
 # 유저 인증 스키마 (실사용)
 # -------------------------------------------------------------------
 
@@ -381,4 +486,10 @@ __all__ = [
     "AuthUser",
     "InternalSignupRequest",
     "InternalSignupVerify",
+    "DocSearchQuery",
+    "DocSearchResult",
+    "DocSearchResponse",
+    "DocStatsResponse",
+    "LibrarianRequest",
+    "LibrarianResponse",
 ]

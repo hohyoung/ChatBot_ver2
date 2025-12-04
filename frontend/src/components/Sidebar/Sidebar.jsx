@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import "./Sidebar.css";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { FaComments, FaUpload, FaCog, FaTools, FaTimes } from "react-icons/fa";
+import { FaComments, FaUpload, FaCog, FaTools, FaTimes, FaBook } from "react-icons/fa";
 import { authApi, getAuthToken } from "../../api/http";
 
 export default function Sidebar({ open, onClose }) {
@@ -53,8 +53,6 @@ export default function Sidebar({ open, onClose }) {
 
     return (
         <aside className={`sb ${open ? "is-open" : ""}`}>
-            <div className="sb__logo">메뉴</div>
-
             <button className="sb__close" onClick={onClose} aria-label="닫기">
                 <FaTimes />
             </button>
@@ -62,6 +60,9 @@ export default function Sidebar({ open, onClose }) {
             <nav className="sb__nav">
                 <NavLink to="/" className={linkClass} onClick={onClose}>
                     <FaComments /> 대화
+                </NavLink>
+                <NavLink to="/docs" className={linkClass} onClick={onClose}>
+                    <FaBook /> 문서 열람
                 </NavLink>
                 <NavLink to="/upload" className={linkClass} onClick={onClose}>
                     <FaUpload /> 업로드

@@ -16,8 +16,11 @@ DOCS_DIR = BASE_DIR / "storage" / "docs"  # 최종 공개/비공개 문서 저�
 PUBLIC_DIR = DOCS_DIR / "public"
 PRIVATE_DIR = DOCS_DIR / "private"
 
+# 이미지 저장 디렉토리 (표/그림 원본 이미지)
+IMAGES_DIR = BASE_DIR / "storage" / "images"
+
 # 디렉터리 보장
-for _d in (UPLOADS_DIR, PUBLIC_DIR, PRIVATE_DIR):
+for _d in (UPLOADS_DIR, PUBLIC_DIR, PRIVATE_DIR, IMAGES_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
@@ -165,3 +168,85 @@ def delete_files_by_relpaths(relpaths: Iterable[str]) -> dict:
         except Exception as e:
             errors.append((rel, str(e)))
     return {"requested": len(rels), "deleted": deleted, "errors": errors}
+
+
+# -----------------------------
+# 이미지 저장 (표/그림)
+# -----------------------------
+def save_chunk_image(
+    image_data: bytes,
+    doc_id: str,
+    chunk_index: int,
+    image_type: str,  # "table" | "figure"
+    image_format: str = "png",
+) -> Tuple[Path, str]:
+    """
+    청크에 연결된 이미지를 저장하고 경로/URL 반환.
+
+    Args:
+        image_data: 이미지 바이너리 데이터
+        doc_id: 문서 ID
+        chunk_index: 청크 인덱스
+        image_type: "table" 또는 "figure"
+        image_format: 이미지 포맷 (png, jpeg 등)
+
+    Returns:
+        (저장된 파일 경로, 정적 URL)
+
+    폴더 구조: storage/images/{doc_id}/{chunk_index:04d}_{image_type}.{format}
+    URL: /static/images/{doc_id}/{filename}
+    """
+    # 문서별 폴더 생성
+    doc_dir = IMAGES_DIR / doc_id
+    ensure_dir(doc_dir)
+
+    # 파일명 생성 (doc_id는 폴더명으로 사용하므로 파일명에서 제외)
+    ext = image_format.lower()
+    if ext == "jpg":
+        ext = "jpeg"
+    filename = f"{chunk_index:04d}_{image_type}.{ext}"
+    dst_path = doc_dir / filename
+
+    # 저장
+    dst_path.write_bytes(image_data)
+
+    # URL 생성 (폴더 구조 반영)
+    url = f"/static/images/{doc_id}/{filename}"
+
+    return dst_path, url
+
+
+def delete_chunk_images_by_doc_id(doc_id: str) -> dict:
+    """
+    특정 문서의 이미지 폴더 전체 삭제.
+
+    Args:
+        doc_id: 문서 ID
+
+    Returns:
+        {"deleted": N, "errors": [...]}
+    """
+    deleted, errors = 0, []
+    doc_dir = IMAGES_DIR / doc_id
+
+    try:
+        if doc_dir.exists() and doc_dir.is_dir():
+            # 폴더 내 모든 파일 삭제 후 폴더 삭제
+            for img_path in doc_dir.iterdir():
+                try:
+                    if img_path.is_file():
+                        img_path.unlink()
+                        deleted += 1
+                except Exception as e:
+                    errors.append((str(img_path), str(e)))
+
+            # 빈 폴더 삭제
+            try:
+                doc_dir.rmdir()
+            except Exception as e:
+                # 폴더가 비어있지 않으면 무시 (에러 파일이 남아있을 수 있음)
+                pass
+    except Exception as e:
+        errors.append(("dir_access", str(e)))
+
+    return {"deleted": deleted, "errors": errors}

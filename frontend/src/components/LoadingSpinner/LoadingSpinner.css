@@ -1,0 +1,181 @@
+/* ===== Loading Spinner Container ===== */
+.loading-spinner-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+}
+
+.loading-spinner-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ===== Spinner Animation ===== */
+.loading-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Size variations */
+.size-sm .loading-spinner {
+    width: 18px;
+    height: 18px;
+}
+
+.size-md .loading-spinner {
+    width: 28px;
+    height: 28px;
+}
+
+.size-lg .loading-spinner {
+    width: 40px;
+    height: 40px;
+}
+
+/* 단일 스피너 링 */
+.spinner-ring {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 3px solid #e5e7eb;
+    border-top-color: var(--accent-blue, #0a4d9a);
+    animation: spinner-rotate 0.8s linear infinite;
+}
+
+.size-sm .spinner-ring {
+    border-width: 2px;
+}
+
+.size-lg .spinner-ring {
+    border-width: 4px;
+}
+
+/* Color variations */
+.color-primary .spinner-ring {
+    border-color: #e5e7eb;
+    border-top-color: var(--accent-blue, #0a4d9a);
+}
+
+.color-white .spinner-ring {
+    border-color: rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+}
+
+.color-gray .spinner-ring {
+    border-color: #e5e7eb;
+    border-top-color: #6b7280;
+}
+
+@keyframes spinner-rotate {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ===== Loading Message ===== */
+.loading-message {
+    font-size: 14px;
+    color: var(--text-secondary, #6b7280);
+    font-weight: 500;
+}
+
+.size-sm .loading-message {
+    font-size: 12px;
+}
+
+.size-lg .loading-message {
+    font-size: 16px;
+}
+
+/* ===== Skeleton Loader ===== */
+.skeleton-loader {
+    background: linear-gradient(
+        90deg,
+        var(--border-color, #e5e7eb) 25%,
+        #f3f4f6 50%,
+        var(--border-color, #e5e7eb) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* ===== Page Loader ===== */
+.page-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    width: 100%;
+}
+
+/* ===== Card Loader ===== */
+.card-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 48px 24px;
+    background: var(--surface, #ffffff);
+    border: 1px dashed var(--border-color-strong, rgba(0, 0, 0, 0.12));
+    border-radius: var(--radius-lg, 16px);
+    text-align: center;
+}
+
+.card-loader-icon {
+    font-size: 32px;
+    color: var(--text-tertiary, #9ca3af);
+    animation: iconPulse 2s ease-in-out infinite;
+}
+
+@keyframes iconPulse {
+    0%, 100% {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+}
+
+.card-loader-message {
+    font-size: 0.9375rem;
+    color: var(--text-secondary, #6b7280);
+    font-weight: 500;
+}
+
+/* ===== Button Loading State ===== */
+.btn-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.btn-loading .loading-spinner-inline {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.btn-loading .btn-text {
+    visibility: hidden;
+}

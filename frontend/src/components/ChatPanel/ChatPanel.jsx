@@ -1,65 +1,113 @@
 import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import './ChatPanel.css';
-import { FaPaperPlane, FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
+import { FaPaperPlane, FaThumbsUp, FaThumbsDown, FaQuestionCircle, FaTimes, FaPlus, FaImage, FaTable, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
 import MarkdownRenderer from '../MarkdownRenderer';
 import FAQList from '../FAQ/FAQList';
+import PDFModal from '../PDFModal/PDFModal';
+import LoadingSpinner from '../LoadingSpinner/LoadingSpinner';
+import { SERVER_ERROR_MESSAGE } from '../../api/http';
 
-const SourceCard = ({ source, onSelect, onFeedback, lastQuery }) => {
-    const [feedbackSent, setFeedbackSent] = useState(null);
-    const pageLabel = source.page_start ? `p.${source.page_start}` : null;
+// 로컬 스토리지 키 및 TTL (24시간)
+const HISTORY_STORAGE_KEY = 'chat_history';
+const HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // 24시간
 
-    const handleFeedback = (vote, e) => {
-        e.stopPropagation();
-        if (feedbackSent) return;
-        onFeedback(source.chunk_id, vote, lastQuery);
-        setFeedbackSent(vote);
+// 대화 내역 로드 (만료 체크 포함)
+const loadHistoryFromStorage = () => {
+    try {
+        const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
+        if (!stored) return [];
+
+        const { history, savedAt } = JSON.parse(stored);
+        const now = Date.now();
+
+        // 24시간 경과 시 삭제
+        if (now - savedAt > HISTORY_TTL_MS) {
+            localStorage.removeItem(HISTORY_STORAGE_KEY);
+            return [];
+        }
+
+        // thinking 상태인 메시지 제거 (이전 세션에서 완료되지 않은 응답)
+        return (history || []).filter(item => !item.thinking);
+    } catch {
+        return [];
+    }
+};
+
+// 대화 내역 저장
+const saveHistoryToStorage = (history) => {
+    try {
+        // thinking 상태나 스트리밍 중인 메시지는 저장하지 않음
+        const saveable = history.filter(item => !item.thinking && !item.isStreaming);
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify({
+            history: saveable,
+            savedAt: Date.now()
+        }));
+    } catch {
+        // 스토리지 용량 초과 등 에러 무시
+    }
+};
+
+// GAR 단계별 아이콘 매핑
+const getStageIcon = (stage) => {
+    const icons = {
+        intent: '🤔',
+        expand: '🔍',
+        search: '📚',
+        rerank: '⭐',
+        generate: '✍️'
     };
-
-    return (
-        <div className="source-card" onClick={onSelect}>
-            <div className="source-card-header">
-                <h4 className="source-card-title">{source.doc_title || 'Untitled Document'}</h4>
-                {pageLabel && <span className="source-card-page">{pageLabel}</span>}
-            </div>
-            <p className="source-card-content">{source.content}</p>
-            <div className="feedback-area">
-                {feedbackSent ? (
-                    <span className="feedback-thanks">피드백 주셔서 감사합니다!</span>
-                ) : (
-                    <>
-                        <button className="feedback-btn good" onClick={(e) => handleFeedback('up', e)}>
-                            <FaThumbsUp /> 유용해요
-                        </button>
-                        <button className="feedback-btn bad" onClick={(e) => handleFeedback('down', e)}>
-                            <FaThumbsDown /> 관련 없어요
-                        </button>
-                    </>
-                )}
-            </div>
-        </div>
-    );
+    return icons[stage] || '⏳';
 };
 
 export default function ChatPanel({
     connecting,
+    loadingStage,
+    connectionFailed,  // 서버 연결 실패 상태
+    connectionRecovered, // 서버 연결 복구 상태
     answer,
     sources,
-    selectedSource,        // (추후 필요 시 사용)
+    selectedSource,
     onSelectSource,
     onAsk,
-    onFeedback
+    onFeedback,
+    initialQuestion  // 외부에서 전달된 초기 질문 (DocsPage 요약 등)
 }) {
-    const [history, setHistory] = useState([]);
+    // 로컬 스토리지에서 대화 내역 로드
+    const [history, setHistory] = useState(() => loadHistoryFromStorage());
     const [question, setQuestion] = useState('');
-    const [lastQuery, setLastQuery] = useState('');
-    const [modalSources, setModalSources] = useState(null);
-    const [showWelcome, setShowWelcome] = useState(true); // ★ 첫 진입 웰컴 말풍선
+    const [pdfModalSource, setPdfModalSource] = useState(null);
+    const [imageModalSrc, setImageModalSrc] = useState(null); // 이미지 확대 모달
+    const [showWelcome, setShowWelcome] = useState(() => loadHistoryFromStorage().length === 0);
+    const [faqOpen, setFaqOpen] = useState(true); // 기본 열림 상태
     const historyEndRef = useRef(null);
+    const processedInitialRef = useRef(null); // 이미 처리한 initialQuestion 추적
+
+    // 대화 내역 변경 시 로컬 스토리지에 저장
+    useEffect(() => {
+        saveHistoryToStorage(history);
+    }, [history]);
 
     useEffect(() => {
         historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [history, connecting]);
+
+    // 외부에서 전달된 초기 질문 처리 (DocsPage 요약 버튼 등)
+    useEffect(() => {
+        if (initialQuestion && initialQuestion !== processedInitialRef.current) {
+            processedInitialRef.current = initialQuestion;
+            // 히스토리에 질문 추가 후 봇 응답 대기 상태 추가
+            setHistory(prev => [
+                ...prev,
+                { type: 'user', content: initialQuestion },
+                { type: 'bot', thinking: true }
+            ]);
+            // 웰컴 메시지 숨김
+            setShowWelcome(false);
+            // 질문 전송
+            onAsk(initialQuestion);
+        }
+    }, [initialQuestion, onAsk]);
 
     // 스트리밍 응답 처리: answer가 변경될 때마다 마지막 bot 메시지 업데이트
     useEffect(() => {
@@ -73,139 +121,349 @@ export default function ChatPanel({
                     newHistory[newHistory.length - 1] = {
                         type: 'bot',
                         content: answer,
-                        sources: sources
+                        sources: sources,
+                        isStreaming: connecting  // 스트리밍 중 여부 추적
                     };
                 } else {
                     // 마지막 항목이 bot이 아니면 새로 추가 (이론적으로 발생하지 않아야 함)
                     newHistory.push({
                         type: 'bot',
                         content: answer,
-                        sources: sources
+                        sources: sources,
+                        isStreaming: connecting
                     });
                 }
                 return newHistory;
             });
         }
-    }, [answer, sources]);
+    }, [answer, sources, connecting]);
+
+    // 연결 실패 처리: thinking 상태인 마지막 메시지를 실패 메시지로 교체
+    useEffect(() => {
+        if (connectionFailed) {
+            setHistory(prev => {
+                const newHistory = [...prev];
+                const lastItem = newHistory[newHistory.length - 1];
+
+                // 마지막 항목이 thinking 상태의 bot 메시지라면 실패 메시지로 교체
+                if (lastItem && lastItem.type === 'bot' && lastItem.thinking) {
+                    newHistory[newHistory.length - 1] = {
+                        type: 'bot',
+                        connectionFailed: true  // 연결 실패 표시
+                    };
+                }
+                return newHistory;
+            });
+        }
+    }, [connectionFailed]);
+
+    // 연결 복구 처리: 이전 실패 메시지를 복구 메시지로 교체
+    useEffect(() => {
+        if (connectionRecovered) {
+            setHistory(prev => {
+                const newHistory = [...prev];
+                // 실패 상태인 메시지를 찾아서 복구 상태로 변경
+                for (let i = newHistory.length - 1; i >= 0; i--) {
+                    if (newHistory[i].type === 'bot' && newHistory[i].connectionFailed) {
+                        newHistory[i] = {
+                            type: 'bot',
+                            connectionRecovered: true  // 연결 복구 표시
+                        };
+                        break; // 가장 최근 실패 메시지만 변경
+                    }
+                }
+                return newHistory;
+            });
+        }
+    }, [connectionRecovered]);
 
     const handleAskSubmit = (e) => {
         e.preventDefault();
         if (!question.trim() || connecting) return;
-        onAsk(question);
-        setLastQuery(question);
+
+        const q = question.trim();
+        // 히스토리에 질문 추가 후 봇 응답 대기 상태 추가
         setHistory(prev => [
             ...prev,
-            { type: 'user', content: question },
+            { type: 'user', content: q },
             { type: 'bot', thinking: true }
         ]);
+        // 입력창 초기화 (먼저!)
         setQuestion('');
+        // 질문 전송
+        onAsk(q);
         // 첫 질문 시 웰컴 말풍선 제거
         if (showWelcome) setShowWelcome(false);
     };
 
-    const handleBubbleClick = (item) => {
-        if (item.type === 'bot' && item.sources?.length > 0) {
-            onSelectSource(item.sources[0]);
-        }
+    const handleDocBadgeClick = (source) => {
+        setPdfModalSource(source);
     };
 
     const handleFAQClick = (faqQuestion) => {
-        // FAQ 클릭 시 질문 입력창에 자동 입력
-        setQuestion(faqQuestion);
-        // 웰컴 메시지 제거
+        // FAQ 클릭 시 즉시 질의 전송
         if (showWelcome) setShowWelcome(false);
+
+        // 히스토리에 질문 추가 후 봇 응답 대기 상태 추가
+        setHistory(prev => [
+            ...prev,
+            { type: 'user', content: faqQuestion },
+            { type: 'bot', thinking: true }
+        ]);
+
+        // 질문 전송
+        onAsk(faqQuestion);
+
+        // 모바일에서 FAQ 패널 닫기
+        if (window.innerWidth <= 768) {
+            setFaqOpen(false);
+        }
+    };
+
+    const toggleFaq = () => {
+        setFaqOpen(prev => !prev);
+    };
+
+    // 대화 내역 초기화
+    const handleClearHistory = () => {
+        if (history.length === 0) return;
+        if (window.confirm('대화 내역을 모두 삭제하시겠습니까?')) {
+            setHistory([]);
+            setShowWelcome(true);
+            localStorage.removeItem(HISTORY_STORAGE_KEY);
+        }
     };
 
     return (
-        <div className="chat-container">
-            <div className="chat-history">
-                {/* FAQ 리스트: 대화 시작 전에만 표시 */}
-                {history.length === 0 && (
-                    <FAQList onQuestionClick={handleFAQClick} />
-                )}
+        <div className={`chat-container ${faqOpen ? 'faq-panel-open' : ''}`}>
+            {/* 메인 채팅 영역 */}
+            <div className="chat-main">
+                {/* 채팅 헤더: 새 대화 + FAQ 버튼 */}
+                <div className="chat-header">
+                    <button
+                        type="button"
+                        className="btn-new-chat"
+                        onClick={handleClearHistory}
+                        disabled={connecting || history.length === 0}
+                    >
+                        <FaPlus />
+                        <span>새 대화</span>
+                    </button>
+                    <button
+                        type="button"
+                        className={`btn-faq-header ${faqOpen ? 'active' : ''}`}
+                        onClick={toggleFaq}
+                    >
+                        <FaQuestionCircle />
+                        <span>FAQ</span>
+                    </button>
+                </div>
 
-                {/* ★ 웰컴 말풍선: 첫 진입 시에만 보이고, 질문하면 사라짐 */}
-                {showWelcome && history.length === 0 && (
-                    <div className="chat-bubble bot is-welcome">
-                        안녕하세요! 👋<br />
-                        오른쪽에는 답변의 근거가 된 문서가 미리보기로 표시돼요.<br />
-                        아래 입력창에 질문을 입력해 대화를 시작해 보세요.<br />
-                        문서 내 표나 그림 등의 내용은 답변하기 어려워요!
+                <div className="chat-history">
+                    {/* 웰컴 말풍선: 첫 진입 시에만 보이고, 질문하면 사라짐 */}
+                    {showWelcome && history.length === 0 && (
+                        <div className="chat-bubble bot is-welcome">
+                            안녕하세요! 👋<br />
+                            사내 규정에 대해 궁금한 점을 물어보세요.<br />
+                            답변 하단에 표시되는 문서 카드를 클릭하면 원본 PDF를 확인할 수 있어요.
+                        </div>
+                    )}
 
-                    </div>
-                )}
+                    {history.map((item, index) => {
+                        if (item.type === 'user') {
+                            return <div key={index} className="chat-bubble user">{item.content}</div>;
+                        }
+                        if (item.type === 'bot') {
+                            // 연결 복구 상태 표시
+                            if (item.connectionRecovered) {
+                                return (
+                                    <div key={index} className="loading-stage connection-recovered">
+                                        <div className="stage-icon success-icon">
+                                            <FaCheckCircle />
+                                        </div>
+                                        <div className="connection-recovered-content">
+                                            <p className="stage-message success-title">서버와 연결되었습니다</p>
+                                            <p className="success-detail">연결이 복구되어 정상적으로 서비스를 이용하실 수 있습니다.</p>
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            // 연결 실패 상태 표시
+                            if (item.connectionFailed) {
+                                return (
+                                    <div key={index} className="loading-stage connection-failed">
+                                        <div className="stage-icon error-icon">
+                                            <FaExclamationTriangle />
+                                        </div>
+                                        <div className="connection-failed-content">
+                                            <p className="stage-message error-title">{SERVER_ERROR_MESSAGE.title}</p>
+                                            <p className="error-detail">{SERVER_ERROR_MESSAGE.detail}</p>
+                                            <p className="error-contact">{SERVER_ERROR_MESSAGE.contact}</p>
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            if (item.thinking) {
+                                // 로딩 단계 메시지 표시 (GAR 파이프라인)
+                                if (loadingStage) {
+                                    return (
+                                        <div key={index} className="loading-stage">
+                                            <div className="stage-icon">{getStageIcon(loadingStage.stage)}</div>
+                                            <p className="stage-message">{loadingStage.message}</p>
+                                            <div className="stage-dots">
+                                                <span>.</span><span>.</span><span>.</span>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                // 초기 연결 상태: 스피너와 함께 "연결 중" 표시
+                                return (
+                                    <div key={index} className="loading-stage connecting">
+                                        <LoadingSpinner size="md" />
+                                        <p className="stage-message">서버에 연결 중...</p>
+                                    </div>
+                                );
+                            }
+                            // sources에서 imageRefs 생성 (has_image가 있는 청크들)
+                            const imageRefs = (item.sources || [])
+                                .filter(src => src.has_image && src.image_url)
+                                .map((src, idx) => ({
+                                    ref: `[IMG${idx + 1}]`,
+                                    url: src.image_url,
+                                    type: src.image_type || 'image',
+                                    doc_title: src.doc_title,
+                                    page: src.page_start
+                                }));
 
-                {history.map((item, index) => {
-                    if (item.type === 'user') {
-                        return <div key={index} className="chat-bubble user">{item.content}</div>;
-                    }
-                    if (item.type === 'bot') {
-                        if (item.thinking) {
                             return (
-                                <div key={index} className="chat-bubble thinking">
-                                    <div className="thinking-dot"></div>
-                                    <div className="thinking-dot"></div>
-                                    <div className="thinking-dot"></div>
+                                <div key={index} className={`chat-bubble bot ${item.isStreaming ? 'streaming' : ''}`}>
+                                    <MarkdownRenderer
+                                        content={item.content}
+                                        isStreaming={item.isStreaming}
+                                        imageRefs={imageRefs}
+                                    />
+                                    {item.sources && item.sources.length > 0 && (
+                                        <div className="source-docs-area">
+                                            <div className="source-docs-label">참고 문서:</div>
+                                            <div className="source-docs-list">
+                                                {item.sources.map((src, idx) => (
+                                                    <div
+                                                        key={src.chunk_id + idx}
+                                                        className="source-doc-badge"
+                                                        onClick={() => handleDocBadgeClick(src)}
+                                                    >
+                                                        <span className="doc-badge-icon">📄</span>
+                                                        <span className="doc-badge-title">{src.doc_title || 'Untitled'}</span>
+                                                        {src.page_start && (
+                                                            <span className="doc-badge-page">p.{src.page_start}</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {/* 이미지가 있는 청크들 표시 */}
+                                            {item.sources.some(src => src.has_image && src.image_url) && (
+                                                <div className="source-images-area">
+                                                    <div className="source-images-label">
+                                                        {item.sources.some(src => src.image_type === 'table') ? '📊' : '🖼️'} 원본 이미지:
+                                                    </div>
+                                                    <div className="source-images-list">
+                                                        {item.sources.filter(src => src.has_image && src.image_url).map((src, idx) => (
+                                                            <div
+                                                                key={`img-${src.chunk_id}-${idx}`}
+                                                                className="source-image-card"
+                                                                onClick={() => setImageModalSrc(src.image_url)}
+                                                            >
+                                                                <img
+                                                                    src={src.image_url}
+                                                                    alt={src.image_type === 'table' ? '표' : '그림'}
+                                                                    className="source-image-thumb"
+                                                                />
+                                                                <div className="source-image-label">
+                                                                    {src.image_type === 'table' ? (
+                                                                        <><FaTable /> 표</>
+                                                                    ) : (
+                                                                        <><FaImage /> 그림</>
+                                                                    )}
+                                                                    {src.page_start && ` (p.${src.page_start})`}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         }
-                        return (
-                            <div key={index} className="chat-bubble bot" onClick={() => handleBubbleClick(item)}>
-                                <MarkdownRenderer content={item.content} />
-                                {item.sources && item.sources.length > 0 && (
-                                    <div className="source-button-area">
-                                        <button
-                                            className="btn btn-secondary"
-                                            onClick={(e) => { e.stopPropagation(); setModalSources(item.sources); }}
-                                        >
-                                            상세 근거 문서
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    }
-                    return null;
-                })}
-                <div ref={historyEndRef} />
+                        return null;
+                    })}
+                    <div ref={historyEndRef} />
+                </div>
+
+                {/* 입력 영역 */}
+                <div className="chat-input-area">
+                    <form onSubmit={handleAskSubmit} className="chat-input-form">
+                        <input
+                            type="text"
+                            className="chat-input chat-input--lg"
+                            placeholder="질문을 입력하세요… (Enter로 전송)"
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                            disabled={connecting}
+                        />
+                        <button type="submit" className="btn btn-primary btn-send" disabled={connecting || !question.trim()}>
+                            <FaPaperPlane />
+                        </button>
+                    </form>
+                </div>
             </div>
 
-            {/* 입력 영역 */}
-            <div className="chat-input-area">
-                <form onSubmit={handleAskSubmit} className="chat-input-form">
-                    <input
-                        type="text"
-                        className="chat-input chat-input--lg"  
-                        placeholder="질문을 입력하세요… (Enter로 전송)"
-                        value={question}
-                        onChange={(e) => setQuestion(e.target.value)}
-                        disabled={connecting}
-                    />
-                    <button type="submit" className="btn btn-primary btn-send" disabled={connecting || !question.trim()}>
-                        <FaPaperPlane />
+            {/* FAQ 사이드 패널 (데스크톱) / 바텀 시트 (모바일) */}
+            <div className={`faq-panel ${faqOpen ? 'open' : ''}`}>
+                <div className="faq-panel-header">
+                    <h3>자주 묻는 질문</h3>
+                    <button
+                        className="faq-panel-close"
+                        onClick={() => setFaqOpen(false)}
+                        aria-label="FAQ 닫기"
+                    >
+                        <FaTimes />
                     </button>
-                </form>
+                </div>
+                <div className="faq-panel-content">
+                    <FAQList onQuestionClick={handleFAQClick} isInPanel={true} />
+                </div>
             </div>
 
-            {/* 근거 모달 */}
-            {modalSources && (
-                <div className="source-modal-overlay" onClick={() => setModalSources(null)}>
-                    <div className="source-modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="source-modal-header">
-                            <h3 className="source-modal-title">답변 근거 (클릭시 이동)</h3>
-                            <button className="source-modal-close" onClick={() => setModalSources(null)}>&times;</button>
-                        </div>
-                        <div className="source-list">
-                            {modalSources.map((source, index) => (
-                                <SourceCard
-                                    key={source.chunk_id + index}
-                                    source={source}
-                                    lastQuery={lastQuery}
-                                    onSelect={() => { onSelectSource(source); setModalSources(null); }}
-                                    onFeedback={onFeedback}
-                                />
-                            ))}
-                        </div>
+            {/* FAQ 오버레이 (모바일) */}
+            {faqOpen && <div className="faq-overlay" onClick={() => setFaqOpen(false)} />}
+
+            {/* PDF 미리보기 모달 */}
+            {pdfModalSource && (
+                <PDFModal
+                    source={pdfModalSource}
+                    onClose={() => setPdfModalSource(null)}
+                />
+            )}
+
+            {/* 이미지 확대 모달 */}
+            {imageModalSrc && (
+                <div className="image-modal-overlay" onClick={() => setImageModalSrc(null)}>
+                    <div className="image-modal-content" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            className="image-modal-close"
+                            onClick={() => setImageModalSrc(null)}
+                            aria-label="닫기"
+                        >
+                            <FaTimes />
+                        </button>
+                        <img
+                            src={imageModalSrc}
+                            alt="원본 이미지"
+                            className="image-modal-img"
+                        />
+                        <div className="image-modal-hint">클릭하여 닫기</div>
                     </div>
                 </div>
             )}

@@ -3,6 +3,23 @@
 // ======================================================
 
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+
+// 서버 연결 오류 메시지
+export const SERVER_ERROR_MESSAGE = {
+    title: "서버에 문제가 발생했습니다",
+    detail: "귀하의 문제가 아니니 걱정하지 마세요. 문제가 지속될 경우 DI팀 안호형 실습생에게 문의 바랍니다.",
+    contact: "hh.ahn@soosan.co.kr, 010-2647-1625"
+};
+
+// 서버 연결 오류인지 확인 (500 에러 또는 네트워크 오류)
+export function isServerError(error) {
+    if (!error) return false;
+    // 네트워크 오류 (fetch 실패)
+    if (error.message === 'Failed to fetch' || error.name === 'TypeError') return true;
+    // 500번대 서버 오류
+    if (error.status >= 500) return true;
+    return false;
+}
 // 💡 '/api'를 제거하여 정적 파일(문서, 이미지 등)을 위한 기본 주소를 만듭니다.
 const STATIC_BASE = (import.meta.env.VITE_API_BASE || "").replace("/api", "");
 
@@ -95,12 +112,17 @@ async function http(method, path, body, opts = {}) {
     }
 
     if (res.status === 401) {
-        try {
-            clearAuthToken();
-        } catch { }
-        try {
-            window.dispatchEvent(new Event("auth:changed"));
-        } catch { }
+        // 로그인 요청 자체에서 401이 발생한 경우는 토큰 클리어/이벤트 발생 제외
+        // (로그인 실패 시 모달이 닫히는 버그 방지)
+        const isLoginRequest = path.includes('/auth/login');
+        if (!isLoginRequest) {
+            try {
+                clearAuthToken();
+            } catch { }
+            try {
+                window.dispatchEvent(new Event("auth:changed"));
+            } catch { }
+        }
     }
 
     const data = await parseJsonSafe(res);
@@ -177,10 +199,31 @@ export const authApi = {
 export const docsApi = {
     upload: (formData) => postForm("/docs/upload", formData),
     status: (job_id) => get(`/docs/${encodeURIComponent(job_id)}/status`),
+    // 현재 사용자의 진행 중인 업로드 작업 조회
+    activeJobs: () => get("/docs/active-jobs"),
     myList: () => get("/docs/my"),
     remove: (doc_id) => del(`/docs/my/${encodeURIComponent(doc_id)}`),
     locate: ({ doc_id, page }) =>
         get("/docs/locate", { params: { doc_id, page } }),
+
+    // P0-4: 문서 검색 및 통계
+    search: ({ keyword, tags, doc_type, owner_username, visibility, year, limit, offset }) =>
+        get("/docs/search", {
+            params: {
+                keyword,
+                tags, // 콤마 구분 문자열
+                doc_type,
+                owner_username,
+                visibility,
+                year,
+                limit,
+                offset,
+            },
+        }),
+    stats: () => get("/docs/stats"),
+
+    // 챗봇 사서: 자연어 쿼리 → 필터 파라미터 추출
+    librarian: (query) => post("/docs/librarian", { query }),
 };
 
 // --------------------------
@@ -205,6 +248,8 @@ export const adminApi = {
     docs: {
         list: () => get("/admin/docs"),
         remove: (doc_id) => del(`/admin/docs/${encodeURIComponent(doc_id)}`),
+        // 청크 조회 (관리자 전용)
+        chunks: (doc_id) => get(`/admin/docs/${encodeURIComponent(doc_id)}/chunks`),
     },
 };
 

@@ -3,6 +3,27 @@
     color: #333;
 }
 
+/* 스트리밍 중 커서 애니메이션 */
+.markdown-renderer.is-streaming {
+    /* 스트리밍 중에도 마크다운 렌더링 유지 */
+    /* 줄바꿈 보존: 백엔드에서 줄 단위로 전송하므로 pre-wrap 적용 */
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.streaming-cursor {
+    display: inline;
+    color: #0a4d9a;
+    animation: blink 1s step-end infinite;
+    font-weight: bold;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
 /* 조항 하이라이트 */
 .legal-clause-highlight {
     background-color: #fff3cd;
@@ -68,15 +89,20 @@
     background-color: #f8f9fa;
 }
 
-/* 목록 */
+/* 목록 - 컴팩트하게 */
 .markdown-renderer ul,
 .markdown-renderer ol {
-    margin: 8px 0;
-    padding-left: 24px;
+    margin: 4px 0;
+    padding-left: 20px;
 }
 
 .markdown-renderer li {
-    margin: 4px 0;
+    margin: 2px 0;
+}
+
+/* 목록 내부 단락 간격 최소화 */
+.markdown-renderer li > p {
+    margin: 0;
 }
 
 /* 강조 */
@@ -127,7 +153,134 @@
     font-style: italic;
 }
 
-/* 단락 */
+/* 단락 - 과도한 줄바꿈 방지 */
 .markdown-renderer p {
-    margin: 8px 0;
+    margin: 4px 0;
+}
+
+/* 첫 번째 단락과 마지막 단락 마진 제거 */
+.markdown-renderer > p:first-child {
+    margin-top: 0;
+}
+
+.markdown-renderer > p:last-child {
+    margin-bottom: 0;
+}
+
+/* 연속된 빈 단락 숨기기 */
+.markdown-renderer p:empty {
+    display: none;
+}
+
+/* ===== 마크다운 이미지 ===== */
+.markdown-image-wrapper {
+    display: block;
+    margin: 16px 0;
+    text-align: center;
+}
+
+.markdown-image {
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.markdown-image.expandable {
+    cursor: zoom-in;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.markdown-image.expandable:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.markdown-image-caption {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: #666;
+    font-style: italic;
+}
+
+/* ===== 이미지 확대 모달 ===== */
+.markdown-image-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    animation: fadeIn 0.2s ease;
+}
+
+.markdown-image-modal-content {
+    position: relative;
+    max-width: 95vw;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: default;
+}
+
+.markdown-image-modal-close {
+    position: absolute;
+    top: -50px;
+    right: 0;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.markdown-image-modal-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+.markdown-image-modal-img {
+    max-width: 100%;
+    max-height: calc(95vh - 80px);
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    background: white;
+}
+
+.markdown-image-modal-hint {
+    margin-top: 16px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 모바일 대응 */
+@media (max-width: 768px) {
+    .markdown-image {
+        max-height: 300px;
+    }
+
+    .markdown-image-modal-close {
+        top: -45px;
+        width: 36px;
+        height: 36px;
+        font-size: 24px;
+    }
 }

@@ -153,6 +153,10 @@ def upsert_chunks(
             # ⬇⬇⬇ 중요: 페이지 정보 저장
             "page_start": page_start,
             "page_end": page_end,
+            # 이미지 메타데이터
+            "has_image": getattr(c, "has_image", False),
+            "image_type": getattr(c, "image_type", None),
+            "image_url": getattr(c, "image_url", None),
         }
 
         # 공통 메타(예: uploaded_at) 병합
@@ -436,3 +440,296 @@ def delete_doc_any(doc_id: str) -> Dict[str, Any]:
         "doc_urls": urls,
         "doc_relpaths": rels,
     }
+
+
+# === P0-4: 문서 검색 및 통계 ===
+
+
+def search_docs(
+    keyword: str | None = None,
+    tags: List[str] | None = None,
+    doc_type: str | None = None,
+    owner_username: str | None = None,
+    visibility: str | None = None,
+    year: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """
+    문서 검색 (필터 지원).
+
+    반환:
+    {
+        "items": [
+            {
+                "doc_id": str,
+                "doc_title": str,
+                "doc_type": str,
+                "doc_url": str,
+                "doc_relpath": str,
+                "visibility": str,
+                "owner_username": str,
+                "chunk_count": int,
+                "uploaded_at": str,
+                "tags": List[str],
+            },
+            ...
+        ],
+        "total": int  # 필터링된 전체 문서 수
+    }
+    """
+    col = get_collection()
+
+    # 1) where 절 구성
+    conditions: List[Dict[str, Any]] = []
+
+    if doc_type:
+        conditions.append(_eq("doc_type", doc_type))
+    if owner_username:
+        conditions.append(_eq("owner_username", owner_username))
+    if visibility:
+        conditions.append(_eq("visibility", visibility))
+
+    # 태그 필터 (OR 검색): tags 필드가 CSV이므로 contains 사용
+    if tags:
+        tag_conditions = []
+        for tag in tags:
+            # tags 필드에 해당 태그가 포함되어 있는지 확인
+            tag_conditions.append({"tags": {"$contains": tag}})
+        if len(tag_conditions) == 1:
+            conditions.append(tag_conditions[0])
+        else:
+            conditions.append({"$or": tag_conditions})
+
+    where_clause = _and(*conditions) if conditions else {}
+
+    # 2) 모든 메타데이터 조회
+    res = col.get(where=where_clause if conditions else None, include=["metadatas"])
+
+    # 3) doc_id 단위로 집계
+    docs: Dict[str, Dict[str, Any]] = {}
+    for meta in res.get("metadatas", []) or []:
+        if not meta:
+            continue
+        did = meta.get("doc_id")
+        if not did:
+            continue
+
+        # 키워드 필터 (문서 제목에 포함 여부 체크)
+        if keyword:
+            doc_title = (meta.get("doc_title") or "").lower()
+            if keyword.lower() not in doc_title:
+                continue
+
+        # 연도 필터 (uploaded_at 기준)
+        if year:
+            uploaded_at = meta.get("uploaded_at")
+            if uploaded_at and not uploaded_at.startswith(str(year)):
+                continue
+
+        d = docs.setdefault(
+            did,
+            {
+                "doc_id": did,
+                "doc_title": meta.get("doc_title"),
+                "doc_type": meta.get("doc_type"),
+                "doc_url": meta.get("doc_url"),
+                "doc_relpath": meta.get("doc_relpath"),
+                "visibility": meta.get("visibility"),
+                "owner_username": meta.get("owner_username"),
+                "chunk_count": 0,
+                "uploaded_at": None,
+                "_uploaded_at_min": None,
+                "_tags": set(),
+            },
+        )
+        d["chunk_count"] += 1
+
+        # 가장 오래된 uploaded_at 사용
+        ua = meta.get("uploaded_at")
+        if ua:
+            if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
+                d["_uploaded_at_min"] = ua
+
+        # 태그 수집
+        tags_str = meta.get("tags")
+        if tags_str:
+            d["_tags"].update(t.strip() for t in tags_str.split(",") if t.strip())
+
+    # 4) 최종 정리 및 정렬
+    items = []
+    for v in docs.values():
+        v["uploaded_at"] = v.pop("_uploaded_at_min", None)
+        v["tags"] = list(v.pop("_tags", set()))
+        items.append(v)
+
+    # 최신 업로드가 위로
+    items.sort(key=lambda x: (x["uploaded_at"] or ""), reverse=True)
+
+    total = len(items)
+
+    # 5) 페이지네이션
+    paginated = items[offset : offset + limit]
+
+    return {
+        "items": paginated,
+        "total": total,
+    }
+
+
+def get_chunks_by_doc_id(doc_id: str) -> List[Dict[str, Any]]:
+    """
+    특정 문서의 모든 청크를 조회하여 반환.
+    청크 인덱스 순서대로 정렬.
+
+    반환:
+    [
+        {
+            "chunk_id": str,
+            "chunk_index": int,  # 청크 순번 (0부터)
+            "content": str,
+            "page_start": int | None,
+            "page_end": int | None,
+            "has_image": bool,
+            "image_type": str | None,  # "table" | "figure"
+        },
+        ...
+    ]
+    """
+    col = get_collection()
+    res = col.get(
+        where=_eq("doc_id", doc_id),
+        include=["documents", "metadatas"],
+    )
+
+    chunks: List[Dict[str, Any]] = []
+    ids = res.get("ids", []) or []
+    documents = res.get("documents", []) or []
+    metadatas = res.get("metadatas", []) or []
+
+    for i, chunk_id in enumerate(ids):
+        doc_content = documents[i] if i < len(documents) else ""
+        meta = metadatas[i] if i < len(metadatas) else {}
+
+        # chunk_id에서 인덱스 추출 (예: doc_abc123_0005 → 5)
+        chunk_index = 0
+        try:
+            parts = chunk_id.rsplit("_", 1)
+            if len(parts) == 2:
+                chunk_index = int(parts[1])
+        except (ValueError, IndexError):
+            chunk_index = i
+
+        chunks.append({
+            "chunk_id": chunk_id,
+            "chunk_index": chunk_index,
+            "content": doc_content,
+            "page_start": meta.get("page_start"),
+            "page_end": meta.get("page_end"),
+            "has_image": meta.get("has_image") == "true" or meta.get("has_image") is True,
+            "image_type": meta.get("image_type"),
+        })
+
+    # 청크 인덱스 순서대로 정렬
+    chunks.sort(key=lambda x: x["chunk_index"])
+
+    return chunks
+
+
+def get_doc_stats() -> Dict[str, Any]:
+    """
+    전체 문서 통계 반환.
+
+    반환:
+    {
+        "total_docs": int,
+        "total_chunks": int,
+        "by_type": {"policy-manual": 5, ...},
+        "by_visibility": {"public": 10, ...},
+        "by_owner": {"user1": 3, ...},
+        "recent_uploads": int  # 최근 7일 내 업로드 수
+    }
+    """
+    from datetime import datetime, timezone, timedelta
+
+    col = get_collection()
+    res = col.get(include=["metadatas"])
+
+    total_chunks = len(res.get("ids", []))
+    doc_ids = set()
+    by_type: Dict[str, int] = {}
+    by_visibility: Dict[str, int] = {}
+    by_owner: Dict[str, int] = {}
+    recent_count = 0
+
+    # 최근 7일 기준 시간
+    seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    for meta in res.get("metadatas", []) or []:
+        if not meta:
+            continue
+
+        did = meta.get("doc_id")
+        if did:
+            doc_ids.add(did)
+
+        doc_type = meta.get("doc_type")
+        if doc_type:
+            by_type[doc_type] = by_type.get(doc_type, 0) + 1
+
+        vis = meta.get("visibility")
+        if vis:
+            by_visibility[vis] = by_visibility.get(vis, 0) + 1
+
+        owner = meta.get("owner_username")
+        if owner:
+            by_owner[owner] = by_owner.get(owner, 0) + 1
+
+        # 최근 업로드 체크
+        uploaded_at = meta.get("uploaded_at")
+        if uploaded_at and uploaded_at >= seven_days_ago:
+            recent_count += 1
+
+    return {
+        "total_docs": len(doc_ids),
+        "total_chunks": total_chunks,
+        "by_type": by_type,
+        "by_visibility": by_visibility,
+        "by_owner": by_owner,
+        "recent_uploads": recent_count,
+    }
+
+
+def update_doc_visibility(doc_id: str, new_visibility: str) -> int:
+    """
+    특정 doc_id의 모든 청크 visibility를 일괄 변경.
+
+    Args:
+        doc_id: 문서 ID
+        new_visibility: 변경할 visibility 값 ("public", "org", "private", "pending")
+
+    Returns:
+        변경된 청크 수
+    """
+    col = get_collection()
+    res = col.get(where=_eq("doc_id", doc_id), include=["metadatas"])
+    ids = res.get("ids") or []
+    metas = res.get("metadatas") or []
+
+    if not ids:
+        log.debug("update_doc_visibility: no chunks found for doc_id=%s", doc_id)
+        return 0
+
+    # 각 청크의 메타데이터에서 visibility만 변경
+    updated_metas = []
+    for meta in metas:
+        new_meta = dict(meta) if meta else {}
+        new_meta["visibility"] = new_visibility
+        updated_metas.append(sanitize_metadata(new_meta))
+
+    col.update(ids=ids, metadatas=updated_metas)
+    log.info(
+        "update_doc_visibility: doc_id=%s new_visibility=%s updated=%d chunks",
+        doc_id, new_visibility, len(ids)
+    )
+    return len(ids)

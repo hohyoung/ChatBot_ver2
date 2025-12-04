@@ -1,55 +1,117 @@
 /* src/components/Header/Header.css */
+
+/* Google/Apple inspired header */
 .hdr {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 14px 24px;
+    gap: 16px;
+    padding: 0 16px;
     background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
     z-index: 100;
-    height: 65px;
+    height: 64px;
 }
 
+/* Brand/Logo */
 .hdr__brand {
-    font-weight: 700;
-    font-size: 1.2rem;
-    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 1.125rem;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hdr__brand::before {
+    content: '';
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--accent-blue) 0%, #60a5fa 100%);
+    border-radius: 8px;
+    flex-shrink: 0;
 }
 
 .hdr__spacer {
     flex: 1;
 }
 
+/* User meta section */
 .hdr__meta {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 0.875rem;
 }
-
-.hdr__menu {
-    display: none;
-    background: none;
-    border: 0;
-    font-size: 1.5rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
-@media (max-width: 768px) {
-    .hdr__menu {
-        display: block;
-    }
-}
-
 
 .hdr__hello {
     white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+.hdr__hello strong {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+}
+
+/* Menu button (mobile) */
+.hdr__menu {
+    display: none;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    align-items: center;
+    justify-content: center;
+}
+
+.hdr__menu:hover {
+    background: var(--interactive-bg);
+}
+
+.hdr__menu:active {
+    background: var(--interactive-hover);
+}
+
+@media (max-width: 768px) {
+    .hdr {
+        padding: 0 8px;
+        gap: 8px;
+    }
+
+    .hdr__menu {
+        display: flex;
+    }
+
+    .hdr__brand {
+        font-size: 1rem;
+    }
+
+    .hdr__brand::before {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+    }
+
+    .hdr__hello {
+        display: none;
+    }
+
+    .hdr__meta {
+        gap: 8px;
+    }
 }

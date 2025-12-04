@@ -204,3 +204,61 @@
 .form-row.two .col.end .btn {
     min-height: 40px;
 }
+
+/* 서버 연결 오류 패널 */
+.server-error-panel {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 1px solid #fca5a5;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+}
+
+.server-error-icon {
+    display: flex;
+    justify-content: center;
+    color: #dc2626;
+    font-size: 32px;
+}
+
+.server-error-content {
+    text-align: center;
+}
+
+.server-error-content h4 {
+    margin: 0 0 8px 0;
+    color: #991b1b;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.server-error-content p {
+    margin: 0 0 6px 0;
+    color: #7f1d1d;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.server-error-contact {
+    font-size: 12px !important;
+    color: #b91c1c !important;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.5);
+    padding: 6px 10px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.server-error-panel .btn {
+    align-self: center;
+}

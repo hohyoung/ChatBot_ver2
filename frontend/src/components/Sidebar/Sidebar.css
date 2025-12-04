@@ -1,78 +1,112 @@
 /* src/components/Sidebar/Sidebar.css */
+
+/* Google/Apple inspired sidebar */
 .sb {
-    width: 240px;
+    width: 200px;
     flex-shrink: 0;
-    /* ★★★ 핵심 수정: 상호작용 배경색(중간 톤 회색)으로 변경 ★★★ */
-    background: var(--interactive-bg);
-    color: var(--text-secondary);
-    padding: 22px;
+    background: var(--sidebar-bg);
     display: flex;
     flex-direction: column;
-    gap: 16px;
     border-right: 1px solid var(--border-color);
-    transition: transform 0.3s ease-in-out;
+    transition: transform 0.25s ease;
 }
 
-.sb__logo {
-    font-weight: 800;
-    font-size: 1.4rem;
-    margin-bottom: 12px;
-    color: var(--accent-blue);
-}
-
+/* Navigation section */
 .sb__nav {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 2px;
 }
 
+/* Navigation links - Google style */
 .sb__link {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
+    padding: 0 12px;
+    height: 40px;
     color: var(--text-secondary);
     text-decoration: none;
-    border-radius: var(--radius);
-    transition: background 0.2s, color 0.2s;
+    border-radius: 20px;
+    transition: all var(--transition-fast);
+    font-size: 0.875rem;
     font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+.sb__link svg {
+    font-size: 1.125rem;
+    flex-shrink: 0;
+    opacity: 0.8;
 }
 
 .sb__link:hover {
-    background: var(--surface);
-    /* 호버 시 흰색 배경 */
+    background: var(--sidebar-hover);
     color: var(--text-primary);
 }
 
+.sb__link:hover svg {
+    opacity: 1;
+}
+
+/* Active state - Google blue highlight */
 .sb__link.is-active {
-    background: var(--accent-blue);
-    color: #ffffff;
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text);
     font-weight: 600;
 }
 
+.sb__link.is-active svg {
+    opacity: 1;
+    color: var(--sidebar-active-text);
+}
+
+/* Logo/Title area - minimal, clean */
+.sb__logo {
+    display: none; /* 헤더에 브랜드가 있으므로 숨김 */
+}
+
+/* Footer spacer */
+.sb__foot {
+    flex: 1;
+}
+
+/* Close button (mobile) */
 .sb__close {
     display: none;
     position: absolute;
-    top: 16px;
-    right: 16px;
-    background: none;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    background: transparent;
     border: none;
-    font-size: 1.5rem;
+    border-radius: 50%;
+    font-size: 1.25rem;
     color: var(--text-secondary);
     cursor: pointer;
+    transition: background var(--transition-fast);
+    align-items: center;
+    justify-content: center;
 }
 
+.sb__close:hover {
+    background: var(--interactive-bg);
+}
+
+/* Mobile styles */
 @media (max-width: 768px) {
     .sb {
-        /* 모바일에서는 흰색 배경을 유지하여 다른 콘텐츠와 겹칠 때 명확히 보이도록 합니다. */
-        background: var(--surface);
         position: fixed;
         left: 0;
         top: 0;
         bottom: 0;
+        width: 280px;
         transform: translateX(-100%);
         z-index: 200;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-lg);
+        padding-top: 56px;
     }
 
     .sb.is-open {
@@ -80,6 +114,35 @@
     }
 
     .sb__close {
-        display: block;
+        display: flex;
     }
+
+    .sb__nav {
+        padding: 8px;
+    }
+
+    .sb__link {
+        height: 48px;
+        padding: 0 16px;
+        border-radius: 24px;
+    }
+}
+
+/* Overlay for mobile */
+.sb-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 199;
+    animation: fadeIn 0.2s ease;
+}
+
+.sb-overlay.is-visible {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }

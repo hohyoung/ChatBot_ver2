@@ -37,6 +37,18 @@ class Settings:
     )
 
     openai_api_key: str = _getenv("OPENAI_API_KEY", "")
+
+    # API 키 풀 (라운드로빈용) - P0-7
+    # OPENAI_API_KEYS 환경변수로 콤마 구분 키 지정 가능
+    # 예: OPENAI_API_KEYS=sk-key1,sk-key2,sk-key3
+    openai_api_keys: list[str] = field(
+        default_factory=lambda: [
+            key.strip()
+            for key in (os.getenv("OPENAI_API_KEYS") or "").split(",")
+            if key.strip()
+        ] or [os.getenv("OPENAI_API_KEY", "")]  # 폴백: 기존 단일 키
+    )
+
     # 새 이름(권장)과 구 이름 둘 다 허용
     openai_base_url: str | None = _norm_openai_base(
         _getenv("OPENAI_BASE_URL") or _getenv("OPENAI_API_BASE")

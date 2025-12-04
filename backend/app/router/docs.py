@@ -4,7 +4,7 @@ import re
 from typing import List, Optional
 from fastapi import (
     APIRouter,
-    Path,
+    Path as PathParam,
     UploadFile,
     File,
     Form,
@@ -16,8 +16,17 @@ from fastapi import (
 )
 from pypdf import PdfReader
 from app.services.idgen import new_id
-from app.services.storage import save_batch, delete_files_by_relpaths, DOCS_DIR
-from app.models.schemas import UploadDocsResponse, IngestJobStatus, AuthUser
+from app.services.storage import save_batch, delete_files_by_relpaths, delete_chunk_images_by_doc_id, DOCS_DIR
+from app.models.schemas import (
+    UploadDocsResponse,
+    IngestJobStatus,
+    AuthUser,
+    DocSearchResponse,
+    DocSearchResult,
+    DocStatsResponse,
+    LibrarianRequest,
+    LibrarianResponse,
+)
 from app.ingest.jobs import job_store
 from app.ingest.pipeline import process_job
 from app.services.logging import get_logger
@@ -27,7 +36,12 @@ from urllib.parse import unquote, quote, urlparse
 from pathlib import Path, Path as PPath
 
 # ✅ 벡터스토어/피드백 유틸 임포트 (내 문서 기능)
-from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner
+from app.vectorstore.store import (
+    list_docs_by_owner,
+    delete_doc_for_owner,
+    search_docs,
+    get_doc_stats,
+)
 from app.services.feedback_store import delete_many as feedback_delete_many
 
 log = get_logger("app.router.docs")
@@ -57,7 +71,7 @@ async def upload_docs(
         [p.name for p in saved],
     )
 
-    job_store.start(job_id, total=accepted)
+    job_store.start(job_id, total=accepted, owner_id=int(user.id))
 
     asyncio.create_task(
         process_job(
@@ -70,6 +84,19 @@ async def upload_docs(
     )
 
     return UploadDocsResponse(job_id=job_id, accepted=accepted, skipped=skipped)
+
+
+@router.get("/active-jobs")
+async def get_active_jobs(user: AuthUser = Depends(current_user)):
+    """
+    현재 사용자의 진행 중인 업로드 작업 목록 조회.
+
+    페이지 새로고침, 재접속, 다른 페이지 이동 후 돌아왔을 때
+    진행 중인 업로드 상태를 복원하는 데 사용됩니다.
+    """
+    active_jobs = job_store.get_active_jobs_for_user(int(user.id))
+    log.info("get_active_jobs: user_id=%s count=%d", user.id, len(active_jobs))
+    return {"jobs": active_jobs}
 
 
 @router.get("/{job_id}/status", response_model=IngestJobStatus)
@@ -109,13 +136,17 @@ async def delete_my_doc(doc_id: str, user: AuthUser = Depends(current_user)):
     chunk_ids = result.get("chunk_ids") or []
     feedback_delete_many(chunk_ids)
 
-    # 2) 실제 파일 삭제 (relpath 우선)
+    # 2) 이미지 파일 삭제
+    img_stats = delete_chunk_images_by_doc_id(doc_id)
+    log.info("delete_my_doc: doc_id=%s image_delete=%s", doc_id, img_stats)
+
+    # 3) 실제 파일 삭제 (relpath 우선)
     rels = [r for r in (result.get("doc_relpaths") or []) if r]
     stats = {"requested": 0, "deleted": 0, "errors": []}
     if rels:
         stats = delete_files_by_relpaths(rels)
 
-    # 3) (폴백) 과거 데이터: URL만 있는 경우 public/<name> 삭제 시도
+    # 4) (폴백) 과거 데이터: URL만 있는 경우 public/<name> 삭제 시도
     if (not rels) and (result.get("doc_urls")):
 
         fallbacks = []
@@ -235,3 +266,342 @@ def locate_in_pdf(
     except Exception as e:
         log.exception("[LOCATE] error: %s", e)
         return {"page": None, "url": None}
+
+
+# =========================
+# P0-4: 문서 검색 및 통계
+# =========================
+
+
+@router.get("/search", response_model=DocSearchResponse)
+async def search_documents(
+    keyword: Optional[str] = Query(None, description="문서명/내용 키워드"),
+    tags: Optional[str] = Query(None, description="태그 (콤마 구분)"),
+    doc_type: Optional[str] = Query(None, description="문서 유형"),
+    owner_username: Optional[str] = Query(None, description="업로더"),
+    visibility: Optional[str] = Query(None, description="공개 범위"),
+    year: Optional[int] = Query(None, description="업로드 연도"),
+    limit: int = Query(50, ge=1, le=200, description="최대 결과 수"),
+    offset: int = Query(0, ge=0, description="오프셋"),
+    user: AuthUser = Depends(current_user),
+):
+    """
+    문서 검색 API (필터 지원).
+
+    쿼리 파라미터:
+    - keyword: 문서 제목 키워드
+    - tags: 태그 (콤마 구분, 예: "hr-policy,vacation")
+    - doc_type: 문서 유형 필터
+    - owner_username: 업로더 필터
+    - visibility: 공개 범위 (public, org, private)
+    - year: 업로드 연도 (예: 2025)
+    - limit: 최대 결과 수 (기본: 50)
+    - offset: 페이지네이션 오프셋 (기본: 0)
+    """
+    # 태그 파싱 (콤마 구분 → 리스트)
+    tag_list = None
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    result = search_docs(
+        keyword=keyword,
+        tags=tag_list,
+        doc_type=doc_type,
+        owner_username=owner_username,
+        visibility=visibility,
+        year=year,
+        limit=limit,
+        offset=offset,
+    )
+
+    # DocSearchResult로 변환
+    items = [DocSearchResult(**item) for item in result["items"]]
+
+    log.info(
+        "search_documents: keyword=%r tags=%r total=%d returned=%d",
+        keyword,
+        tag_list,
+        result["total"],
+        len(items),
+    )
+
+    return DocSearchResponse(
+        items=items,
+        total=result["total"],
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/stats", response_model=DocStatsResponse)
+async def document_statistics(user: AuthUser = Depends(current_user)):
+    """
+    전체 문서 통계 반환.
+
+    반환:
+    - total_docs: 전체 문서 수
+    - total_chunks: 전체 청크 수
+    - by_type: 문서 유형별 청크 수
+    - by_visibility: 공개 범위별 청크 수
+    - by_owner: 업로더별 청크 수
+    - recent_uploads: 최근 7일 내 업로드 청크 수
+    """
+    stats = get_doc_stats()
+    log.info("document_statistics: total_docs=%d total_chunks=%d", stats["total_docs"], stats["total_chunks"])
+    return DocStatsResponse(**stats)
+
+
+@router.post("/librarian", response_model=LibrarianResponse)
+async def chatbot_librarian(
+    request: LibrarianRequest,
+    user: AuthUser = Depends(current_user),
+):
+    """
+    챗봇 사서: 현재 업로드된 문서 중에서 사용자 요청에 가장 적합한 문서를 찾아줍니다.
+
+    예시:
+    - 문서: ["니체철학", "가고시마 맛집", "사내규정"]
+    - 쿼리: "연차 신청하려고 하는데 참고할만한 문서를 찾아"
+    - 응답: ["사내규정"]
+    """
+    import json
+    from openai import OpenAI
+    from app.config import settings
+
+    log.info("librarian query: %r", request.query)
+
+    try:
+        # 1) 현재 업로드된 모든 문서 조회
+        result = search_docs(limit=200)
+        all_docs = result.get("items", [])
+
+        if not all_docs:
+            return LibrarianResponse(
+                selected_doc_ids=[],
+                selected_titles=[],
+                explanation="현재 업로드된 문서가 없습니다.",
+            )
+
+        # 2) 문서 리스트 생성 (doc_id -> doc_title 매핑)
+        doc_map = {}  # {doc_title: doc_id}
+        doc_list = []
+        for doc in all_docs:
+            title = doc.get("doc_title") or doc.get("doc_id")
+            doc_id = doc.get("doc_id")
+            doc_map[title] = doc_id
+            doc_list.append(title)
+
+        log.info("librarian: %d documents available", len(doc_list))
+
+        # 3) LLM에게 문서 리스트와 쿼리 전달
+        from app.services.openai_client import get_client
+        client = get_client()
+
+        prompt = f"""당신은 문서를 찾아주는 사서입니다. 현재 업로드된 문서 목록과 사용자의 요청을 보고, 가장 적합한 문서를 선택하세요.
+
+**현재 문서 목록:**
+{chr(10).join(f"{i+1}. {title}" for i, title in enumerate(doc_list))}
+
+**사용자 요청:** "{request.query}"
+
+**지시사항:**
+- 사용자 요청에 가장 적합한 문서 제목을 선택하세요 (1개 이상 가능)
+- 문서 목록에 없는 제목은 선택하지 마세요
+- JSON 형식으로 응답하세요: {{"selected_titles": ["제목1", "제목2"], "explanation": "선택 이유"}}
+
+**예시:**
+문서: ["니체철학", "가고시마 맛집", "사내규정"]
+요청: "연차 신청하려고 하는데 참고할만한 문서를 찾아"
+응답: {{"selected_titles": ["사내규정"], "explanation": "연차 신청은 사내 규정에 명시되어 있습니다."}}
+
+JSON만 응답하세요."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "당신은 문서를 찾아주는 사서입니다. JSON만 응답하세요."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300,
+        )
+
+        content = response.choices[0].message.content.strip()
+        log.info("librarian LLM response: %s", content)
+
+        # 4) JSON 파싱
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+        parsed = json.loads(content)
+        selected_titles = parsed.get("selected_titles", [])
+        explanation = parsed.get("explanation", "")
+
+        # 5) 제목을 doc_id로 변환
+        selected_doc_ids = []
+        valid_titles = []
+        for title in selected_titles:
+            if title in doc_map:
+                selected_doc_ids.append(doc_map[title])
+                valid_titles.append(title)
+            else:
+                log.warning("librarian: title not found in doc_map: %r", title)
+
+        result = LibrarianResponse(
+            selected_doc_ids=selected_doc_ids,
+            selected_titles=valid_titles,
+            explanation=explanation or f'"{request.query}" 요청에 적합한 문서를 찾았습니다.',
+        )
+
+        log.info("librarian result: %d documents selected", len(selected_doc_ids))
+        return result
+
+    except Exception as e:
+        log.exception("librarian error: %s", e)
+        # 에러 시 빈 결과 반환
+        return LibrarianResponse(
+            selected_doc_ids=[],
+            selected_titles=[],
+            explanation=f"문서 검색 중 오류가 발생했습니다: {str(e)}",
+        )
+
+
+# ===== 디버그: 검색 테스트 =====
+@router.get("/debug/search")
+async def debug_search(
+    q: str = Query(..., description="검색 쿼리"),
+    k: int = Query(20, description="검색 개수"),
+):
+    """
+    디버깅용: 검색 쿼리가 어떤 청크를 찾는지 확인
+    벡터 유사도 점수와 함께 반환
+    """
+    try:
+        from app.services.embedding import embed_query
+        from app.vectorstore.store import query_by_embedding
+
+        # 임베딩 생성
+        q_vec = embed_query(q)
+
+        # ChromaDB 검색
+        raw = query_by_embedding(
+            q_vec,
+            n_results=k,
+            where={"visibility": {"$in": ["org", "public"]}},
+        )
+
+        docs = raw.get("documents", [[]])[0]
+        metas = raw.get("metadatas", [[]])[0]
+        dists = raw.get("distances", [[]])[0]
+
+        results = []
+        for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists)):
+            similarity = 1.0 - dist  # cosine distance → similarity
+            results.append({
+                "rank": i + 1,
+                "chunk_id": meta.get("chunk_id"),
+                "doc_title": meta.get("doc_title"),
+                "similarity": round(similarity, 4),
+                "distance": round(dist, 4),
+                "content_preview": doc[:300] + "..." if len(doc) > 300 else doc,
+            })
+
+        return {
+            "query": q,
+            "total_results": len(results),
+            "results": results,
+        }
+
+    except Exception as e:
+        log.exception("debug_search error: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"검색 테스트 실패: {str(e)}"
+        )
+
+
+# ===== 디버그: 전체 문서 목록 조회 =====
+@router.get("/debug/docs")
+async def debug_list_docs():
+    """
+    디버깅용: ChromaDB에 저장된 모든 문서 제목 목록 조회
+    """
+    try:
+        from app.vectorstore.store import _get_or_create_collection
+
+        collection = _get_or_create_collection()
+        results = collection.get(include=["metadatas"])
+
+        # 문서 제목 중복 제거
+        doc_titles = set()
+        for meta in results["metadatas"]:
+            if meta and "doc_title" in meta:
+                doc_titles.add(meta["doc_title"])
+
+        return {
+            "total_documents": len(doc_titles),
+            "documents": sorted(list(doc_titles))
+        }
+    except Exception as e:
+        log.exception("debug_list_docs error: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"문서 목록 조회 실패: {str(e)}"
+        )
+
+
+# ===== 디버그: 문서 청크 조회 =====
+@router.get("/debug/chunks/{doc_title}")
+async def debug_get_chunks(
+    doc_title: str = PathParam(..., description="문서 제목"),
+):
+    """
+    디버깅용: 특정 문서의 모든 청크 조회 (인증 불필요)
+    표가 어떻게 저장되었는지 확인 가능
+    """
+    try:
+        from app.vectorstore.store import _get_or_create_collection
+
+        collection = _get_or_create_collection()
+        results = collection.get(
+            where={"doc_title": doc_title},
+            include=["documents", "metadatas"]
+        )
+
+        if not results["ids"]:
+            raise HTTPException(
+                status_code=404,
+                detail=f"문서 '{doc_title}'을 찾을 수 없습니다."
+            )
+
+        chunks = []
+        for chunk_id, content, meta in zip(
+            results["ids"],
+            results["documents"],
+            results["metadatas"]
+        ):
+            chunks.append({
+                "chunk_id": chunk_id,
+                "page_start": meta.get("page_start"),
+                "page_end": meta.get("page_end"),
+                "tags": meta.get("tags"),
+                "content": content,
+            })
+
+        return {
+            "doc_title": doc_title,
+            "total_chunks": len(chunks),
+            "chunks": chunks,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("debug_get_chunks error: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"청크 조회 실패: {str(e)}"
+        )

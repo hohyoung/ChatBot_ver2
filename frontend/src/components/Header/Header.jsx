@@ -54,7 +54,7 @@ export default function Header({ onToggleSidebar }) {
                 <FaBars />
             </button>
 
-            <div className="hdr__brand">SOOSAN ChatBot</div>
+            <div className="hdr__brand">SOOSAN CHATBOT</div>
             <div className="hdr__spacer" />
 
             <div className="hdr__meta">

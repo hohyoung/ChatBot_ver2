@@ -1,12 +1,14 @@
 // src/components/auth/AuthModal.jsx
 import React, { useState } from "react";
 import "./AuthModal.css";
-import { authApi, setAuthToken } from "../../api/http";
+import { authApi, setAuthToken, isServerError, SERVER_ERROR_MESSAGE } from "../../api/http";
+import { FaExclamationTriangle } from "react-icons/fa";
 
 export default function AuthModal({ open, onClose, onLoggedIn }) {
     const [tab, setTab] = useState("login"); // 'login' | 'signup'
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
+    const [serverError, setServerError] = useState(false); // 서버 연결 오류 여부
 
     // login
     const [usernameOrEmail, setUsernameOrEmail] = useState("");
@@ -31,6 +33,7 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
         e?.preventDefault();
         setLoading(true);
         setErr("");
+        setServerError(false);
         try {
             // 현재 백엔드는 username 로그인만 지원
             const res = await authApi.login({ username: usernameOrEmail.trim(), password: pw });
@@ -44,7 +47,11 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
             onLoggedIn?.();
             onClose?.();
         } catch (e2) {
-            setErr(String(e2?.message || e2));
+            if (isServerError(e2)) {
+                setServerError(true);
+            } else {
+                setErr(String(e2?.message || e2));
+            }
         } finally {
             setLoading(false);
         }
@@ -65,6 +72,7 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
         e?.preventDefault();
         setLoading(true);
         setErr("");
+        setServerError(false);
 
         try {
             const trimmedName = (name || "").trim();
@@ -103,7 +111,11 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
             onLoggedIn?.();
             onClose?.();
         } catch (e2) {
-            setErr(e2?.message || "회원가입 실패");
+            if (isServerError(e2)) {
+                setServerError(true);
+            } else {
+                setErr(e2?.message || "회원가입 실패");
+            }
         } finally {
             setLoading(false);
         }
@@ -120,6 +132,26 @@ export default function AuthModal({ open, onClose, onLoggedIn }) {
                 </div>
 
                 <div className="authmodal__body">
+                    {/* 서버 연결 오류 패널 */}
+                    {serverError && (
+                        <div className="server-error-panel">
+                            <div className="server-error-icon">
+                                <FaExclamationTriangle />
+                            </div>
+                            <div className="server-error-content">
+                                <h4>{SERVER_ERROR_MESSAGE.title}</h4>
+                                <p>{SERVER_ERROR_MESSAGE.detail}</p>
+                                <p className="server-error-contact">{SERVER_ERROR_MESSAGE.contact}</p>
+                            </div>
+                            <button
+                                className="btn btn-ghost"
+                                onClick={() => setServerError(false)}
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    )}
+
                     <div className="tabs">
                         <button
                             className={`tab ${tab === "login" ? "active" : ""}`}

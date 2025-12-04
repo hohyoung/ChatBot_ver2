@@ -1,19 +1,41 @@
 /* src/index.css */
 :root {
-  /* Color Palette */
-  --bg: #f8f9fa;
+  /* Color Palette - Soft base, Clear active states */
+  --bg: #f4f5f7;
   --surface: #ffffff;
-  --text-primary: #212529;
-  --text-secondary: #495057;
-  --border-color: #dee2e6;
-  --accent-blue: #0A4D9A;
-  --accent-blue-dark: #083b78;
-  --interactive-bg: #f1f3f5;
+  --surface-elevated: #ffffff;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-color-strong: rgba(0, 0, 0, 0.15);
+
+  /* Accent Colors - Vivid but not harsh */
+  --accent-blue: #3b82f6;
+  --accent-blue-hover: #2563eb;
+  --accent-blue-light: #eff6ff;
+  --accent-blue-dark: #1d4ed8;
+
+  /* Sidebar & Navigation */
+  --sidebar-bg: #ffffff;
+  --sidebar-hover: #f3f4f6;
+  --sidebar-active-bg: #dbeafe;
+  --sidebar-active-text: #2563eb;
+
+  /* Interactive States */
+  --interactive-bg: #f3f4f6;
+  --interactive-hover: #e5e7eb;
 
   /* Sizing & Effects */
-  --radius: 12px;
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.08), 0 10px 20px rgba(0, 0, 0, 0.08);
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
 }
 
 * {
@@ -51,46 +73,51 @@ body {
   background: #adb5bd;
 }
 
-/* 공용 버튼 스타일 */
+/* 공용 버튼 스타일 - Google Material Style */
 .btn {
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 10px 18px;
-  font-weight: 600;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 20px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
-  font-size: 1rem;
+  transition: all var(--transition-fast);
+  font-size: 0.875rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  letter-spacing: 0.01em;
+  min-height: 36px;
 }
 
-/* ★★★ 2. 버튼 CSS 문제 해결을 위한 선택자 수정 ★★★ */
-/* .btn.btn-primary 선택자는 .btn 보다 우선순위가 높아 스타일이 덮어써지지 않습니다. */
 .btn.btn-primary {
   background-color: var(--accent-blue);
-  border-color: var(--accent-blue);
   color: white;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
 }
 
 .btn.btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-blue-dark);
-  border-color: var(--accent-blue-dark);
+  background-color: var(--accent-blue-hover);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+}
+
+.btn.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn.btn-primary:disabled {
-  background-color: #a5d8ff;
-  border-color: #a5d8ff;
+  background-color: #93c5fd;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .btn.btn-secondary {
-  background-color: #e9ecef;
-  color: #343a40;
-  border-color: var(--border-color);
+  background-color: transparent;
+  color: var(--accent-blue);
+  border: 1px solid var(--border-color-strong);
 }
 
 .btn.btn-secondary:hover {
-  background-color: #d8dde2;
+  background-color: var(--accent-blue-light);
+  border-color: var(--accent-blue);
 }

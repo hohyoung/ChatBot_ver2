@@ -41,7 +41,6 @@ def _classify_image_type(img: Image.Image) -> str:
     표 특징:
     - 가로/세로 비율이 극단적이지 않음 (0.3 < ratio < 3.0)
     - 크기가 충분히 큼 (width > 200, height > 100)
-    - 복잡도가 낮음 (색상 수가 적음)
 
     Args:
         img: PIL Image 객체
@@ -58,16 +57,13 @@ def _classify_image_type(img: Image.Image) -> str:
     aspect_ratio = width / height
 
     # 표 휴리스틱: 적절한 비율 + 충분한 크기
+    # 색상 복잡도 체크 제거 - 안티앨리어싱으로 인해 표도 색상이 많을 수 있음
+    # 대신 크기와 비율로만 판단하고, Vision API가 최종 판단
     if 0.3 < aspect_ratio < 3.0 and width > 200 and height > 100:
-        # 색상 복잡도 확인 (표는 보통 단순한 색상 사용)
-        try:
-            colors = img.getcolors(maxcolors=256)
-            if colors and len(colors) < 50:  # 단순한 색상 팔레트
-                return "table"
-        except Exception:
-            pass
+        # 충분히 큰 이미지는 일단 표로 시도 (Vision API가 NO_TABLE 반환 가능)
+        return "table"
 
-    # 나머지는 일반 그림으로 분류
+    # 극단적인 비율 (배너, 로고 등)은 figure로 분류
     return "figure"
 
 
@@ -204,3 +200,192 @@ def filter_images_by_type(
         필터링된 이미지 리스트
     """
     return [img for img in images if img.image_type == image_type]
+
+
+def capture_table_region_by_rendering(
+    pdf_path: Path,
+    page_num: int,
+    bbox: Tuple[float, float, float, float],
+    dpi: int = 200,
+    padding: int = 20,
+    extend_to_bottom: bool = True,
+) -> Optional[bytes]:
+    """
+    페이지 렌더링을 통해 표 영역 캡처 (임베드 이미지 대체)
+
+    PDF에 삽입된 이미지가 표의 일부분만 포함할 경우,
+    페이지를 렌더링하여 전체 표 영역을 캡처합니다.
+
+    Args:
+        pdf_path: PDF 파일 경로
+        page_num: 페이지 번호 (1-based)
+        bbox: 기준 영역 (x0, y0, x1, y1)
+        dpi: 렌더링 해상도
+        padding: 여백 (points)
+        extend_to_bottom: True면 페이지 하단까지 확장
+
+    Returns:
+        PNG 이미지 바이너리, 실패 시 None
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        page_idx = page_num - 1
+
+        if page_idx < 0 or page_idx >= len(doc):
+            log.warning(f"[RENDER] Invalid page number: {page_num}")
+            doc.close()
+            return None
+
+        page = doc[page_idx]
+        x0, y0, x1, y1 = bbox
+
+        # 여백 적용
+        x0 = max(0, x0 - padding)
+        y0 = max(0, y0 - padding)
+        x1 = min(page.rect.width, x1 + padding)
+
+        # 하단 확장 옵션
+        if extend_to_bottom:
+            # 페이지 하단에서 약간의 여백만 남기고 확장
+            y1 = min(page.rect.height - 20, page.rect.height)
+        else:
+            y1 = min(page.rect.height, y1 + padding)
+
+        clip_rect = fitz.Rect(x0, y0, x1, y1)
+
+        # 고해상도 렌더링
+        zoom = dpi / 72.0
+        matrix = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=matrix, clip=clip_rect)
+
+        image_data = pix.tobytes("png")
+        doc.close()
+
+        log.info(
+            f"[RENDER] Captured table region: page={page_num}, "
+            f"bbox=({x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f}), "
+            f"size={len(image_data)} bytes"
+        )
+        return image_data
+
+    except Exception as e:
+        log.error(f"[RENDER] Failed to capture table region: {e}")
+        return None
+
+
+def extract_images_with_full_tables(pdf_path: Path) -> List[ExtractedImage]:
+    """
+    PDF에서 이미지 추출 + 표 영역 전체 캡처
+
+    임베드된 이미지가 표의 일부만 포함할 경우,
+    페이지 렌더링으로 전체 표 영역을 캡처하여 대체합니다.
+
+    Args:
+        pdf_path: PDF 파일 경로
+
+    Returns:
+        추출된 이미지 리스트 (표 이미지는 전체 영역으로 대체됨)
+    """
+    extracted_images: List[ExtractedImage] = []
+
+    try:
+        doc = fitz.open(pdf_path)
+        log.info(f"[FULL_TABLE] Opened PDF: {pdf_path.name}, pages={len(doc)}")
+
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            page_num = page_idx + 1
+            image_list = page.get_images(full=True)
+
+            log.debug(f"[FULL_TABLE] Page {page_num}: found {len(image_list)} images")
+
+            for img_index, img_info in enumerate(image_list):
+                try:
+                    xref = img_info[0]
+                    base_image = doc.extract_image(xref)
+
+                    if not base_image:
+                        continue
+
+                    original_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+
+                    # PIL Image로 메타데이터 추출
+                    pil_image = Image.open(BytesIO(original_bytes))
+                    width, height = pil_image.size
+
+                    # 이미지 타입 분류
+                    img_type = _classify_image_type(pil_image)
+
+                    # 이미지 위치 (바운딩 박스) 추출
+                    rects = page.get_image_rects(xref)
+                    if not rects:
+                        continue
+                    rect = rects[0]
+                    bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+
+                    # 표 타입이면 페이지 렌더링으로 전체 영역 캡처
+                    final_image_data = original_bytes
+                    final_format = image_ext
+                    final_width = width
+                    final_height = height
+
+                    if img_type == "table":
+                        log.info(
+                            f"[FULL_TABLE] Table detected at page={page_num}, "
+                            f"attempting full region capture..."
+                        )
+
+                        # 표 영역 확장 캡처 (y0부터 페이지 하단까지)
+                        rendered = capture_table_region_by_rendering(
+                            pdf_path=pdf_path,
+                            page_num=page_num,
+                            bbox=bbox,
+                            dpi=200,
+                            padding=10,
+                            extend_to_bottom=True,
+                        )
+
+                        if rendered:
+                            final_image_data = rendered
+                            final_format = "png"
+                            # 새 이미지 크기 확인
+                            rendered_img = Image.open(BytesIO(rendered))
+                            final_width, final_height = rendered_img.size
+                            log.info(
+                                f"[FULL_TABLE] Replaced with rendered image: "
+                                f"{width}x{height} -> {final_width}x{final_height}"
+                            )
+
+                    extracted_img = ExtractedImage(
+                        page_num=page_num,
+                        image_index=img_index,
+                        image_type=img_type,
+                        bbox=bbox,
+                        width=final_width,
+                        height=final_height,
+                        image_data=final_image_data,
+                        image_format=final_format,
+                    )
+
+                    extracted_images.append(extracted_img)
+                    log.debug(
+                        f"[FULL_TABLE] Extracted: page={page_num}, index={img_index}, "
+                        f"type={img_type}, size={final_width}x{final_height}"
+                    )
+
+                except Exception as e:
+                    log.warning(
+                        f"[FULL_TABLE] Failed to extract image: "
+                        f"page={page_num}, index={img_index}, error={e}"
+                    )
+                    continue
+
+        doc.close()
+        log.info(f"[FULL_TABLE] Extracted {len(extracted_images)} images from {pdf_path.name}")
+
+    except Exception as e:
+        log.error(f"[FULL_TABLE] Failed to process PDF: {pdf_path}, error={e}")
+        raise
+
+    return extracted_images

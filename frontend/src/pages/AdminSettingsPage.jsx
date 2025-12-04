@@ -1,12 +1,13 @@
 // src/pages/AdminSettingsPage.jsx
 // 관리자 설정 페이지 (문서 관리 / 유저 관리)
 // - 시각/표시: 공통 유틸(fmtDate)
-// - 문서 관리: 문서명/업로더 필터, 업로드 날짜(폴백 포함), 삭제
+// - 문서 관리: 문서명/업로더 필터, 업로드 날짜(폴백 포함), 청크 확인, 삭제
 // - 유저 관리: 다중 필터, 인라인 편집(아이디/이름/이메일/보안등급/비밀번호), 삭제
 
 import React, { useEffect, useMemo, useState } from "react";
 import "./AdminSettingsPage.css";
 import { adminApi } from "../api/http"; // 백엔드 관리자 API
+import MarkdownRenderer from "../components/MarkdownRenderer"; // 마크다운 렌더링
 
 /* =========================================================
    공통: 날짜 포맷터
@@ -53,16 +54,191 @@ function ModeSwitcher({ value, onChange }) {
 }
 
 /* =========================================================
+   청크 뷰어 모달
+   - 문서의 청크들을 순서대로 확인
+   - 좌/우 이동, 마크다운 렌더링
+   ========================================================= */
+function ChunkViewerModal({ docId, docTitle, onClose }) {
+    const [chunks, setChunks] = useState([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [imageModalSrc, setImageModalSrc] = useState(null); // 이미지 확대 모달
+
+    useEffect(() => {
+        async function loadChunks() {
+            setLoading(true);
+            setError("");
+            try {
+                const res = await adminApi.docs.chunks(docId);
+                setChunks(res?.chunks || []);
+            } catch (e) {
+                setError(String(e?.message || e));
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadChunks();
+    }, [docId]);
+
+    // 키보드 이벤트 핸들러
+    useEffect(() => {
+        function handleKeyDown(e) {
+            if (e.key === "Escape") onClose();
+            else if (e.key === "ArrowLeft") setCurrentIndex((i) => Math.max(0, i - 1));
+            else if (e.key === "ArrowRight") setCurrentIndex((i) => Math.min(chunks.length - 1, i + 1));
+        }
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [chunks.length, onClose]);
+
+    const currentChunk = chunks[currentIndex] || null;
+
+    return (
+        <div className="chunk-modal__overlay" onClick={onClose}>
+            <div className="chunk-modal" onClick={(e) => e.stopPropagation()}>
+                {/* 헤더 */}
+                <div className="chunk-modal__header">
+                    <div className="chunk-modal__title">
+                        <span className="chunk-modal__doc-title">{docTitle || docId}</span>
+                        <span className="chunk-modal__subtitle">청크 확인</span>
+                    </div>
+                    <button className="chunk-modal__close" onClick={onClose}>×</button>
+                </div>
+
+                {/* 콘텐츠 */}
+                <div className="chunk-modal__body">
+                    {loading ? (
+                        <div className="chunk-modal__loading">청크를 불러오는 중...</div>
+                    ) : error ? (
+                        <div className="chunk-modal__error">{error}</div>
+                    ) : chunks.length === 0 ? (
+                        <div className="chunk-modal__empty">청크가 없습니다.</div>
+                    ) : (
+                        <>
+                            {/* 청크 메타 정보 */}
+                            <div className="chunk-modal__meta">
+                                <span className="chunk-modal__index">
+                                    청크 {currentIndex + 1} / {chunks.length}
+                                </span>
+                                {currentChunk?.page_start && (
+                                    <span className="chunk-modal__page">
+                                        페이지 {currentChunk.page_start}
+                                        {currentChunk.page_end && currentChunk.page_end !== currentChunk.page_start
+                                            ? `~${currentChunk.page_end}`
+                                            : ""}
+                                    </span>
+                                )}
+                                {currentChunk?.has_image && (
+                                    <span className={`chunk-modal__tag chunk-modal__tag--${currentChunk.image_type || "image"}`}>
+                                        {currentChunk.image_type === "table" ? "📊 표" : "🖼️ 그림"}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* 청크 내용 */}
+                            <div className="chunk-modal__content">
+                                <MarkdownRenderer content={currentChunk?.content || ""} />
+                            </div>
+
+                            {/* 이미지 미리보기 (이미지가 있는 경우만) */}
+                            {currentChunk?.has_image && currentChunk?.image_url && (
+                                <div className="chunk-modal__image-section">
+                                    <div className="chunk-modal__image-label">
+                                        {currentChunk.image_type === "table" ? "📊 원본 표 이미지" : "🖼️ 원본 그림"}
+                                    </div>
+                                    <div
+                                        className="chunk-modal__image-wrapper"
+                                        onClick={() => setImageModalSrc(currentChunk.image_url)}
+                                    >
+                                        <img
+                                            src={currentChunk.image_url}
+                                            alt={currentChunk.image_type === "table" ? "표" : "그림"}
+                                            className="chunk-modal__image-thumb"
+                                        />
+                                        <div className="chunk-modal__image-hint">클릭하여 확대</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 네비게이션 */}
+                            <div className="chunk-modal__nav">
+                                <button
+                                    className="chunk-modal__nav-btn"
+                                    onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                                    disabled={currentIndex === 0}
+                                >
+                                    ← 이전
+                                </button>
+                                <div className="chunk-modal__nav-dots">
+                                    {chunks.length <= 20 ? (
+                                        chunks.map((_, idx) => (
+                                            <button
+                                                key={idx}
+                                                className={`chunk-modal__dot ${idx === currentIndex ? "is-active" : ""}`}
+                                                onClick={() => setCurrentIndex(idx)}
+                                                title={`청크 ${idx + 1}`}
+                                            />
+                                        ))
+                                    ) : (
+                                        <span className="chunk-modal__nav-info">
+                                            {currentIndex + 1} / {chunks.length}
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    className="chunk-modal__nav-btn"
+                                    onClick={() => setCurrentIndex((i) => Math.min(chunks.length - 1, i + 1))}
+                                    disabled={currentIndex === chunks.length - 1}
+                                >
+                                    다음 →
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* 이미지 확대 모달 */}
+                {imageModalSrc && (
+                    <div
+                        className="chunk-image-modal__overlay"
+                        onClick={() => setImageModalSrc(null)}
+                    >
+                        <div className="chunk-image-modal__content" onClick={(e) => e.stopPropagation()}>
+                            <button
+                                className="chunk-image-modal__close"
+                                onClick={() => setImageModalSrc(null)}
+                            >
+                                ×
+                            </button>
+                            <img
+                                src={imageModalSrc}
+                                alt="원본 이미지"
+                                className="chunk-image-modal__img"
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* =========================================================
    문서 관리 섹션
    - 문서명/업로더 필터
    - 업로더: 윗줄 = 이름(없으면 아이디), 아랫줄 = @아이디
    - 업로드 날짜: uploaded_at → created_at → updated_at 폴백
+   - 청크 확인 버튼 (가시성 대체)
    - 삭제(확인 후 즉시 목록 갱신)
    ========================================================= */
 function DocsView() {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState("");
+
+    // 청크 뷰어 모달 상태
+    const [chunkViewerDoc, setChunkViewerDoc] = useState(null); // { doc_id, doc_title }
 
     // 필터 상태
     const [qTitle, setQTitle] = useState("");
@@ -150,8 +326,8 @@ function DocsView() {
                                 <th>문서명</th>
                                 <th className="col-uploader">업로더</th>
                                 <th className="col-date">업로드 날짜</th>
-                                <th className="col-vis">가시성</th>
                                 <th className="col-chunks">청크수</th>
+                                <th className="col-chunk-view">청크 확인</th>
                                 <th className="col-preview">미리보기</th>
                                 <th className="col-actions">삭제</th>
                             </tr>
@@ -172,8 +348,18 @@ function DocsView() {
                                     <td className="admin__muted col-date">
                                         {fmtDate(it.uploaded_at || it.created_at || it.updated_at)}
                                     </td>
-                                    <td className="col-vis">{it.visibility || "-"}</td>
                                     <td className="col-chunks">{it.chunk_count ?? 0}</td>
+                                    <td className="col-chunk-view">
+                                        <button
+                                            className="btn btn-chunk-view"
+                                            onClick={() => setChunkViewerDoc({
+                                                doc_id: it.doc_id,
+                                                doc_title: it.doc_title || it.doc_id
+                                            })}
+                                        >
+                                            확인
+                                        </button>
+                                    </td>
                                     <td className="col-preview">
                                         {it.doc_url ? (
                                             <a href={it.doc_url} target="_blank" rel="noreferrer">열기</a>
@@ -193,6 +379,15 @@ function DocsView() {
                         </tbody>
                     </table>
                 </div>
+            )}
+
+            {/* 청크 뷰어 모달 */}
+            {chunkViewerDoc && (
+                <ChunkViewerModal
+                    docId={chunkViewerDoc.doc_id}
+                    docTitle={chunkViewerDoc.doc_title}
+                    onClose={() => setChunkViewerDoc(null)}
+                />
             )}
         </div>
     );

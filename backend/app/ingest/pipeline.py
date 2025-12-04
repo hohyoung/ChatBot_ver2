@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Dict
 import re
+import os
 from hashlib import sha256
 from datetime import datetime, timezone  # ⬅ 추가
 
 from app.models.schemas import Chunk
 from app.services.embedding import embed_texts
-from app.vectorstore.store import upsert_chunks, doc_exists_by_hash
-from app.services.storage import UPLOADS_DIR, publish_doc, DOCS_DIR
+from app.vectorstore.store import upsert_chunks, doc_exists_by_hash, update_doc_visibility
+from app.services.storage import UPLOADS_DIR, publish_doc, DOCS_DIR, save_chunk_image
 from app.ingest.detect import detect_type
-from app.ingest.chunkers import merge_blocks_to_chunks
+from app.ingest.chunkers import merge_blocks_to_chunks, chunk_by_structure
 from app.ingest.jobs import job_store
 from app.services.logging import get_logger
 from app.ingest.tagger import tag_query
@@ -21,10 +22,46 @@ from app.ingest.parsers.pdf import parse_pdf
 from app.ingest.parsers.docx import parse_docx
 from app.ingest.parsers.txt import parse_txt
 from app.ingest.parsers.html import parse_html
-from app.ingest.parsers.image_extractor import extract_images_from_pdf
+from app.ingest.parsers.image_extractor import extract_images_from_pdf, extract_images_with_full_tables
 from app.ingest.parsers.vision_processor import batch_process_images
 
+# 표 추출 모듈 (pdfplumber)
+try:
+    from app.ingest.parsers.table_extractor import (
+        extract_tables_from_pdf as extract_tables_pdfplumber,
+        capture_table_images,
+        merge_continuation_tables,
+        capture_merged_table_images,
+        merge_adjacent_tables_on_page,  # 방안 A
+        is_complex_table,                # 복잡한 표 감지
+        capture_full_table_region,       # 방안 C
+        ExtractedTable,
+        HAS_PDFPLUMBER,
+    )
+except ImportError:
+    HAS_PDFPLUMBER = False
+    extract_tables_pdfplumber = None
+    capture_table_images = None
+    merge_continuation_tables = None
+    capture_merged_table_images = None
+    merge_adjacent_tables_on_page = None
+    is_complex_table = None
+    capture_full_table_region = None
+    ExtractedTable = None
+
+# Vision API 폴백 (방안 B)
+try:
+    from app.ingest.parsers.vision_processor import process_complex_table_from_image
+except ImportError:
+    process_complex_table_from_image = None
+
 log = get_logger("app.ingest.pipeline")
+
+# P0-2.5: 구조 기반 청킹 Feature Flag
+USE_STRUCTURE_CHUNKING = os.getenv("CHUNKING_MODE", "legacy").lower() == "structure"
+
+# 표 추출 모드: "pdfplumber" (기본) | "vision" | "hybrid" | "off"
+TABLE_EXTRACTION_MODE = os.getenv("TABLE_EXTRACTION_MODE", "hybrid").lower()
 
 
 # --------------------------------------------------------------------------
@@ -145,28 +182,201 @@ def _merge_with_pages(
 
 
 # --------------------------------------------------------------------------
+# 표 추출 헬퍼 (pdfplumber 기반)
+# --------------------------------------------------------------------------
+async def _extract_tables_hybrid(
+    file_path: Path,
+    doc_id: str,
+) -> List[Tuple[int, int, str, str, float, Optional[bytes], str]]:
+    """
+    PDF에서 표를 추출 (하이브리드 방식)
+
+    1단계: pdfplumber로 구조적 추출 시도
+    2단계: 방안 A - 같은 페이지 내 인접 표 병합
+    3단계: 연속 페이지 표 병합
+    4단계: PyMuPDF로 표 영역 이미지 캡처
+    5단계: 방안 B/C - 복잡한 표는 Vision API 폴백 + 고해상도 이미지
+
+    반환값: List[(page_start, page_end, content_type, markdown, confidence, image_data, image_format)]
+      - page_start: 시작 페이지 번호 (1-based)
+      - page_end: 끝 페이지 번호 (병합 표의 경우)
+      - content_type: "table"
+      - markdown: 마크다운 표
+      - confidence: 추출 신뢰도 (0.0 ~ 1.0)
+      - image_data: 표 영역 이미지 바이너리 (원본 이미지)
+      - image_format: 이미지 포맷 ("png")
+    """
+    table_chunks = []
+
+    # 1단계: pdfplumber로 추출
+    if HAS_PDFPLUMBER and TABLE_EXTRACTION_MODE in ("pdfplumber", "hybrid"):
+        try:
+            log.info(f"[TABLE] Step 1: Extracting tables with pdfplumber from {file_path.name}")
+            tables = extract_tables_pdfplumber(file_path)
+
+            if not tables:
+                log.info(f"[TABLE] No tables found in {file_path.name}")
+                return table_chunks
+
+            log.info(f"[TABLE] pdfplumber found {len(tables)} tables")
+
+            # 2단계: 방안 A - 같은 페이지 내 인접 표 병합 (매우 완화된 조건)
+            if merge_adjacent_tables_on_page and len(tables) > 1:
+                log.info(f"[TABLE] Step 2: Merging adjacent tables on same page (found {len(tables)} tables)...")
+                # 복합 표를 제대로 병합하기 위해 매우 완화된 조건 사용
+                # y_threshold=100: 100pt(약 35mm) 간격까지 인접으로 간주
+                # x_overlap_ratio=0.1: 10%만 겹쳐도 인접으로 간주
+                tables = merge_adjacent_tables_on_page(tables, y_threshold=100.0, x_overlap_ratio=0.1)
+
+            # 3단계: 연속 페이지 표 병합
+            if merge_continuation_tables and len(tables) > 1:
+                log.info(f"[TABLE] Step 3: Checking for multi-page tables...")
+                page_heights = {}
+                try:
+                    import fitz
+                    doc = fitz.open(file_path)
+                    for i in range(len(doc)):
+                        page_heights[i + 1] = doc[i].rect.height
+                    doc.close()
+                except Exception as e:
+                    log.warning(f"[TABLE] Failed to get page heights: {e}")
+                    for t in tables:
+                        page_heights[t.page_num] = 792
+
+                tables = merge_continuation_tables(tables, page_heights)
+
+            # 4단계: PyMuPDF로 표 영역 이미지 캡처
+            log.info(f"[TABLE] Step 4: Capturing table images...")
+            if tables and capture_merged_table_images:
+                tables = capture_merged_table_images(file_path, tables, dpi=150, padding=10)
+            elif tables and capture_table_images:
+                tables = capture_table_images(file_path, tables, dpi=150, padding=10)
+
+            # 5단계: 방안 B/C - 복잡한 표는 Vision API 폴백
+            log.info(f"[TABLE] Step 5: Checking for complex tables (Vision fallback)...")
+            for table in tables:
+                if table.markdown and table.confidence >= 0.5:
+                    page_end = table.page_end or table.page_num
+                    final_markdown = table.markdown
+                    final_image_data = table.image_data
+                    final_confidence = table.confidence
+
+                    # 복잡한 표인지 확인
+                    use_vision = False
+                    if is_complex_table and is_complex_table(table):
+                        use_vision = True
+                        log.info(
+                            f"[TABLE] Complex table detected: page={table.page_num}, "
+                            f"triggering Vision fallback"
+                        )
+
+                    # 방안 B: Vision API 폴백
+                    if use_vision and process_complex_table_from_image and table.image_data:
+                        try:
+                            log.info(f"[TABLE] Running Vision API for complex table on page {table.page_num}...")
+
+                            # 방안 C: 고해상도 이미지 캡처
+                            if capture_full_table_region:
+                                high_res_image = capture_full_table_region(
+                                    file_path, table.page_num, table.bbox, dpi=200, padding=15
+                                )
+                                if high_res_image:
+                                    final_image_data = high_res_image
+                                    log.info(f"[TABLE] Captured high-res image for Vision API")
+
+                            # Vision API 호출
+                            vision_markdown = await process_complex_table_from_image(
+                                image_data=final_image_data or table.image_data,
+                                image_format="png",
+                                page_num=table.page_num,
+                            )
+
+                            if vision_markdown:
+                                final_markdown = vision_markdown
+                                final_confidence = 0.95  # Vision 결과는 높은 신뢰도
+                                log.info(
+                                    f"[TABLE] Vision API success: page={table.page_num}, "
+                                    f"length={len(vision_markdown)}"
+                                )
+                            else:
+                                log.warning(
+                                    f"[TABLE] Vision API failed, using pdfplumber result: "
+                                    f"page={table.page_num}"
+                                )
+
+                        except Exception as e:
+                            log.warning(f"[TABLE] Vision API error: {e}, using pdfplumber result")
+
+                    table_chunks.append((
+                        table.page_num,
+                        page_end,
+                        "table",
+                        final_markdown,
+                        final_confidence,
+                        final_image_data,
+                        table.image_format,
+                    ))
+
+                    log.info(
+                        f"[TABLE] Added table: page={table.page_num}-{page_end}, "
+                        f"confidence={final_confidence:.2f}, "
+                        f"vision_used={use_vision and final_markdown != table.markdown}, "
+                        f"has_image={final_image_data is not None}"
+                    )
+
+            log.info(f"[TABLE] Final: {len(table_chunks)} tables from {file_path.name}")
+
+        except Exception as e:
+            log.warning(f"[TABLE] Table extraction failed: {e}")
+            import traceback
+            log.debug(traceback.format_exc())
+
+    return table_chunks
+
+
+# --------------------------------------------------------------------------
 # 이미지 처리 헬퍼 (P0-2)
 # --------------------------------------------------------------------------
 async def _process_pdf_images(
     file_path: Path,
     doc_id: str,
-) -> List[Tuple[int, str, str, str]]:
+    skip_tables: bool = False,
+) -> List[Tuple[int, str, str, str, Optional[bytes], str]]:
     """
     PDF에서 이미지를 추출하고 Vision API로 처리.
 
-    반환값: List[(page_num, image_type, image_content, description)]
+    Args:
+        file_path: PDF 파일 경로
+        doc_id: 문서 ID
+        skip_tables: True면 표 이미지 처리 스킵 (pdfplumber로 처리한 경우)
+
+    반환값: List[(page_num, image_type, image_content, description, image_data, image_format)]
       - page_num: 페이지 번호 (1-based)
       - image_type: "table" | "figure"
       - image_content: 마크다운 표 또는 그림 설명
       - description: 로그용 설명
+      - image_data: 이미지 바이너리 데이터 (저장용)
+      - image_format: 이미지 포맷 (png, jpeg 등)
     """
     try:
-        # 1) 이미지 추출
+        # 1) 이미지 추출 (표 이미지는 전체 영역으로 확장 캡처)
         log.info(f"[IMAGE] Extracting images from {file_path.name}")
-        extracted_images = extract_images_from_pdf(file_path)
+        # extract_images_with_full_tables: 표 이미지를 페이지 렌더링으로 전체 영역 캡처
+        extracted_images = extract_images_with_full_tables(file_path)
 
         if not extracted_images:
             log.info(f"[IMAGE] No images found in {file_path.name}")
+            return []
+
+        # skip_tables 옵션: 표 이미지 제외 (pdfplumber로 이미 처리한 경우)
+        if skip_tables:
+            original_count = len(extracted_images)
+            extracted_images = [img for img in extracted_images if img.image_type != "table"]
+            log.info(
+                f"[IMAGE] Skipping table images: {original_count} -> {len(extracted_images)} images"
+            )
+
+        if not extracted_images:
             return []
 
         log.info(f"[IMAGE] Found {len(extracted_images)} images in {file_path.name}")
@@ -175,17 +385,20 @@ async def _process_pdf_images(
         log.info(f"[IMAGE] Processing images with Vision API...")
         results = await batch_process_images(extracted_images, max_concurrent=3)
 
-        # 3) 결과 변환
+        # 3) 결과 변환 (이미지 바이너리 데이터 포함)
         image_chunks = []
 
-        # 표 처리
-        for img, markdown in results.get("tables", []):
-            image_chunks.append((
-                img.page_num,
-                "table",
-                markdown,
-                f"Table {img.image_index} on page {img.page_num}"
-            ))
+        # 표 처리 (skip_tables=False인 경우에만)
+        if not skip_tables:
+            for img, markdown in results.get("tables", []):
+                image_chunks.append((
+                    img.page_num,
+                    "table",
+                    markdown,
+                    f"Table {img.image_index} on page {img.page_num}",
+                    img.image_data,  # 이미지 바이너리
+                    img.image_format,  # 이미지 포맷
+                ))
 
         # 그림 처리
         for img, description in results.get("figures", []):
@@ -193,7 +406,9 @@ async def _process_pdf_images(
                 img.page_num,
                 "figure",
                 description,
-                f"Figure {img.image_index} on page {img.page_num}"
+                f"Figure {img.image_index} on page {img.page_num}",
+                img.image_data,  # 이미지 바이너리
+                img.image_format,  # 이미지 포맷
             ))
 
         log.info(
@@ -228,9 +443,14 @@ async def process_job(
       2) 청크 생성
       3) 퍼블리시(최종 저장소로 이동/복사) → relpath/url 계약 로그
       5) 태그 생성/정규화
-      6) 임베딩 생성 + 업서트
+      6) 임베딩 생성 + 업서트 (visibility="pending"으로 임시 저장)
       7) (성공 시) 스테이징 원본 삭제
       8) 최종적으로 job_store.finish(job_id) 호출 → 상태를 succeeded/failed로 확정
+      9) 성공한 문서들의 visibility를 pending → 원래 값으로 변경
+
+    Note:
+      - 업로드 중인 문서는 visibility="pending"으로 저장되어 검색에서 제외됨
+      - 모든 파일 처리 완료 후에야 원래 visibility로 전환됨
     """
     # 라우터 호환: job_dir/files 는 내부에서 계산
     job_dir = UPLOADS_DIR / job_id
@@ -239,6 +459,8 @@ async def process_job(
     log.info("process start job_id=%s files=%d dir=%s", job_id, len(files), job_dir)
 
     had_error = False
+    # 성공적으로 upsert된 doc_id 목록 (나중에 visibility 전환용)
+    successful_doc_ids: List[str] = []
 
     for file_path in files:
         try:
@@ -297,14 +519,48 @@ async def process_job(
             )
 
             # 2) 청크 생성
+            # P0-2.5: 구조 기반 청킹 or 기존 방식
+            structure_metadata = []  # 구조 메타데이터 저장용
+            use_structure = USE_STRUCTURE_CHUNKING  # 지역 변수로 복사
+
             if is_pdf:
-                blocks = _pdf_blocks_with_pages(file_path)
-                if not blocks:
-                    job_store.add_error(job_id, f"{file_path.name}: no text extracted")
-                    job_store.inc(job_id)
-                    had_error = True
-                    continue
-                chunks_text, page_ranges = _merge_with_pages(blocks, max_chars=1200)
+                # P0-2.5: 구조 기반 청킹 시도
+                if use_structure:
+                    log.info(f"[INGEST] Using structure-based chunking for {file_path.name}")
+                    try:
+                        chunks_text, page_ranges, structure_metadata = chunk_by_structure(
+                            file_path,
+                            max_chars=2000
+                        )
+
+                        if chunks_text:
+                            log.info(
+                                f"[INGEST] Structure chunking success: "
+                                f"{len(chunks_text)} chunks from {file_path.name}"
+                            )
+                        else:
+                            # 구조 분석 실패 시 기존 방식으로 폴백
+                            log.warning(
+                                f"[INGEST] Structure chunking failed for {file_path.name}, "
+                                f"falling back to legacy chunking"
+                            )
+                            use_structure = False  # 이 파일만 기존 방식으로
+                    except Exception as e:
+                        log.error(
+                            f"[INGEST] Structure chunking error for {file_path.name}: {e}, "
+                            f"falling back to legacy chunking"
+                        )
+                        chunks_text = []
+
+                # 기존 방식 (구조 분석 실패 시 또는 Feature Flag OFF)
+                if not use_structure or not chunks_text:
+                    blocks = _pdf_blocks_with_pages(file_path)
+                    if not blocks:
+                        job_store.add_error(job_id, f"{file_path.name}: no text extracted")
+                        job_store.inc(job_id)
+                        had_error = True
+                        continue
+                    chunks_text, page_ranges = _merge_with_pages(blocks, max_chars=1200)
                 # (마지막 방어선) 페이지 정보가 비거나 전부 None이면 1페이지로 보정
                 if not page_ranges or all(
                     ps is None and pe is None for ps, pe in page_ranges
@@ -315,20 +571,82 @@ async def process_job(
                     )
                     page_ranges = [(1, 1) for _ in range(len(chunks_text))]
 
-                # 2-1) PDF 이미지 처리 (P0-2)
-                image_chunks_data = await _process_pdf_images(file_path, doc_id)
+                # 2-1) 표 추출 (pdfplumber 하이브리드)
+                table_chunks_data = []
+                pdfplumber_table_pages = set()  # pdfplumber로 추출한 표가 있는 페이지
+
+                if TABLE_EXTRACTION_MODE != "off":
+                    table_chunks_data = await _extract_tables_hybrid(file_path, doc_id)
+                    pdfplumber_table_pages = {t[0] for t in table_chunks_data}
+                    log.info(
+                        f"[INGEST] pdfplumber tables: {len(table_chunks_data)} on pages {pdfplumber_table_pages}"
+                    )
+
+                # 2-2) PDF 이미지 처리 (P0-2)
+                # pdfplumber로 표를 이미 추출한 경우 Vision에서 표 이미지 스킵
+                skip_vision_tables = len(table_chunks_data) > 0 and TABLE_EXTRACTION_MODE == "pdfplumber"
+                image_chunks_data = await _process_pdf_images(
+                    file_path, doc_id, skip_tables=skip_vision_tables
+                )
 
                 # 이미지 청크 정보 저장 (나중에 Chunk 객체 생성 시 사용)
-                # image_metadata: Dict[int, Tuple[str, str]]  # chunk_index -> (img_type, img_content)
-                image_metadata = {}
+                # image_metadata: Dict[int, Tuple[str, str, Optional[str]]]
+                # chunk_index -> (img_type, img_content, img_url)
+                image_metadata: Dict[int, Tuple[str, str, Optional[str]]] = {}
 
-                # 이미지 청크를 텍스트 청크와 병합
-                for page_num, img_type, img_content, img_desc in image_chunks_data:
-                    # 이미지를 별도 청크로 추가
+                # pdfplumber 표 청크 추가 (이미지 캡처 포함, 병합 표 지원)
+                for table_data in table_chunks_data:
+                    # 튜플 언패킹: (page_start, page_end, content_type, markdown, confidence, image_data, image_format)
+                    page_start, page_end, content_type, markdown, confidence, img_data, img_format = table_data
+                    chunk_idx = len(chunks_text)
+                    chunks_text.append(markdown)
+                    # 병합 표의 경우 page_start ~ page_end 범위 저장
+                    page_ranges.append((page_start, page_end))
+
+                    # 표 영역 이미지 저장
+                    img_url = None
+                    if img_data:
+                        try:
+                            _, img_url = save_chunk_image(
+                                image_data=img_data,
+                                doc_id=doc_id,
+                                chunk_index=chunk_idx,
+                                image_type="table",
+                                image_format=img_format or "png",
+                            )
+                            log.info(f"[TABLE] Saved table image: {img_url}")
+                        except Exception as e:
+                            log.warning(f"[TABLE] Failed to save table image: {e}")
+
+                    image_metadata[chunk_idx] = ("table", markdown, img_url)
+                    is_merged = page_start != page_end
+                    log.debug(
+                        f"[INGEST] Added table chunk: idx={chunk_idx}, pages={page_start}-{page_end}, "
+                        f"merged={is_merged}, has_image={img_url is not None}"
+                    )
+
+                # 이미지 청크를 텍스트 청크와 병합 (이미지 파일 저장)
+                for page_num, img_type, img_content, img_desc, img_data, img_format in image_chunks_data:
                     chunk_idx = len(chunks_text)
                     chunks_text.append(img_content)
                     page_ranges.append((page_num, page_num))
-                    image_metadata[chunk_idx] = (img_type, img_content)
+
+                    # 이미지 파일 저장 및 URL 생성
+                    img_url = None
+                    if img_data:
+                        try:
+                            _, img_url = save_chunk_image(
+                                image_data=img_data,
+                                doc_id=doc_id,
+                                chunk_index=chunk_idx,
+                                image_type=img_type,
+                                image_format=img_format or "png",
+                            )
+                            log.info(f"[IMAGE] Saved image: {img_url}")
+                        except Exception as e:
+                            log.warning(f"[IMAGE] Failed to save image: {e}")
+
+                    image_metadata[chunk_idx] = (img_type, img_content, img_url)
 
                 log.info(
                     f"[INGEST] Total chunks after images: {len(chunks_text)} "
@@ -394,8 +712,12 @@ async def process_job(
                 has_image = i in image_metadata
                 img_type = None
                 img_content = None
+                img_url = None
                 if has_image:
-                    img_type, img_content = image_metadata[i]
+                    img_type, img_content, img_url = image_metadata[i]
+
+                # 구조 메타데이터 확인 (P0-2.5)
+                struct_meta = structure_metadata[i] if i < len(structure_metadata) else {}
 
                 chunks.append(
                     Chunk(
@@ -405,7 +727,9 @@ async def process_job(
                         doc_type=default_doc_type or "policy-manual",
                         tags=tags,
                         content=content,
-                        visibility=visibility,
+                        # ✅ 업로드 중에는 "pending"으로 저장 → 검색에서 제외
+                        # 모든 파일 처리 완료 후 원래 visibility로 전환
+                        visibility="pending",
                         doc_title=stem,
                         doc_url=doc_url,
                         doc_relpath=doc_relpath,
@@ -417,6 +741,13 @@ async def process_job(
                         has_image=has_image,
                         image_type=img_type,
                         image_content=img_content,
+                        image_url=img_url,  # 원본 이미지 URL
+                        # 구조 메타데이터 (P0-2.5)
+                        section_title=struct_meta.get("section_title"),
+                        article_number=struct_meta.get("article_number"),
+                        hierarchy_level=struct_meta.get("hierarchy_level"),
+                        parent_article=struct_meta.get("parent_article"),
+                        is_complete_article=struct_meta.get("is_complete_article"),
                     )
                 )
             log.info("built chunks file=%s count=%d", file_path.name, len(chunks))
@@ -432,11 +763,20 @@ async def process_job(
             log.info("embedded file=%s vecs=%d dim≈%s", file_path.name, len(embs), dim)
 
             # ✅ 업로드 시각(UTC ISO8601)을 공통 메타로 저장
+            # target_visibility: 최종 전환할 visibility 값도 함께 저장 (나중에 전환 시 참조)
             uploaded_at = datetime.now(timezone.utc).isoformat()
             upsert_chunks(
-                chunks, embeddings=embs, common_metadata={"uploaded_at": uploaded_at}
+                chunks,
+                embeddings=embs,
+                common_metadata={
+                    "uploaded_at": uploaded_at,
+                    "target_visibility": visibility,  # pending → 이 값으로 전환 예정
+                },
             )
-            log.info("upserted file=%s chunks=%d", file_path.name, len(chunks))
+            log.info("upserted file=%s chunks=%d (pending)", file_path.name, len(chunks))
+
+            # ✅ 성공한 doc_id 기록 (나중에 visibility 전환용)
+            successful_doc_ids.append(doc_id)
 
             # 진행 수치 업데이트
             job_store.inc(job_id)
@@ -474,6 +814,37 @@ async def process_job(
         # job_store.finish(job_id, status=("failed" if had_error else "succeeded"))
     except Exception as e:
         log.warning("job finish mark failed job_id=%s err=%s", job_id, e)
+
+    # ✅ 성공한 문서들의 visibility를 pending → 원래 값으로 전환
+    # 이 시점부터 검색 결과에 포함됨
+    if successful_doc_ids:
+        log.info(
+            "[VISIBILITY] Transitioning %d docs from pending to target visibility",
+            len(successful_doc_ids)
+        )
+        for doc_id in successful_doc_ids:
+            try:
+                updated = update_doc_visibility(doc_id, visibility)
+                log.debug(
+                    "[VISIBILITY] doc_id=%s -> %s (%d chunks)",
+                    doc_id, visibility, updated
+                )
+            except Exception as e:
+                log.warning(
+                    "[VISIBILITY] Failed to update doc_id=%s: %s", doc_id, e
+                )
+
+    # ✅ 빈 업로드 폴더 정리
+    try:
+        if job_dir.exists() and job_dir.is_dir():
+            # 폴더 내 파일이 없으면 삭제 (하위 폴더 포함)
+            remaining = list(job_dir.rglob("*"))
+            if not remaining or all(p.is_dir() for p in remaining):
+                import shutil
+                shutil.rmtree(job_dir, ignore_errors=True)
+                log.info("[CLEANUP] removed empty job folder: %s", job_dir)
+    except Exception as e:
+        log.debug("[CLEANUP] failed to remove job folder %s: %s", job_dir, e)
 
     log.info("process done job_id=%s", job_id)
 

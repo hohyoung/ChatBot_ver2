@@ -11,8 +11,8 @@ from app.db import models as m
 from app.services.security import decode_access_token
 
 # docs 라우터가 쓰는 유틸 재사용
-from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner
-from app.services.storage import delete_files_by_relpaths
+from app.vectorstore.store import list_docs_by_owner, delete_doc_for_owner, get_chunks_by_doc_id
+from app.services.storage import delete_files_by_relpaths, delete_chunk_images_by_doc_id
 from app.services.feedback_store import delete_many as feedback_delete_many
 
 router = APIRouter()
@@ -234,16 +234,90 @@ def admin_delete_doc(
     if deleted == 0:
         raise HTTPException(status_code=404, detail="삭제 실패 또는 권한 없음")
 
-    # 3) 연관 피드백/파일 정리 (docs.py와 동일한 후처리)  :contentReference[oaicite:11]{index=11}
+    # 3) 연관 피드백 삭제
     chunk_ids = result.get("chunk_ids") or []
     feedback_delete_many(chunk_ids)
 
-    rels = [r for r in (result.get("doc_relpaths") or []) if r]
-    stats = {"requested": 0, "deleted": 0, "errors": []}
-    if rels:
-        stats = delete_files_by_relpaths(rels)
+    # 4) 이미지 파일 삭제
+    img_stats = delete_chunk_images_by_doc_id(doc_id)
 
-    return {"ok": True, "deleted_chunks": deleted, "file_delete": stats}
+    # 5) 실제 파일 삭제
+    rels = [r for r in (result.get("doc_relpaths") or []) if r]
+    file_stats = {"requested": 0, "deleted": 0, "errors": []}
+    if rels:
+        file_stats = delete_files_by_relpaths(rels)
+
+    return {"ok": True, "deleted_chunks": deleted, "file_delete": file_stats, "image_delete": img_stats}
+
+
+@router.get("/docs/{doc_id}/chunks")
+def get_doc_chunks(
+    doc_id: str = Path(..., description="문서 ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    특정 문서의 모든 청크를 조회 (관리자 전용).
+    청크 인덱스 순서대로 정렬되어 반환.
+
+    Returns:
+        {
+            "doc_id": str,
+            "chunks": [
+                {
+                    "chunk_id": str,
+                    "chunk_index": int,
+                    "content": str,
+                    "page_start": int | None,
+                    "page_end": int | None,
+                    "has_image": bool,
+                    "image_type": str | None,
+                },
+                ...
+            ],
+            "total": int
+        }
+    """
+    _require_admin(authorization, db)
+
+    chunks = get_chunks_by_doc_id(doc_id)
+
+    if not chunks:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없거나 청크가 없습니다.")
+
+    return {
+        "doc_id": doc_id,
+        "chunks": chunks,
+        "total": len(chunks),
+    }
+
+
+@router.get("/api-keys/stats")
+def get_api_key_stats(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    API 키 풀 사용량 통계 조회 (관리자 전용) - P0-7
+
+    Returns:
+        {
+            "total_keys": 3,
+            "stats": {
+                "...key1_suffix": {"requests": 120, "errors": 3, "rate_limits": 1},
+                "...key2_suffix": {"requests": 100, "errors": 1, "rate_limits": 0},
+                "...key3_suffix": {"requests": 80, "errors": 0, "rate_limits": 0}
+            }
+        }
+    """
+    _require_admin(authorization, db)
+
+    from app.services.openai_client import get_pool
+
+    pool = get_pool()
+    stats = pool.get_stats()
+
+    return {"total_keys": len(pool.api_keys), "stats": stats}
 
 
 def _pick_uploaded_at(row: dict) -> str | None:

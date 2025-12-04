@@ -1,0 +1,480 @@
+/* ===============================
+   Docs Page — Consistent with Upload/Settings
+   =============================== */
+
+/* ===== Layout ===== */
+.docs-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.docs-page-header {
+    margin-bottom: 24px;
+}
+
+.docs-page-header h2 {
+    margin: 0 0 8px 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.docs-page-desc {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* ===== 콘텐츠 래퍼 ===== */
+.docs-content-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ===== 로그인 가드 배너 ===== */
+.docs-page .guard-banner {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #fff7ed 0%, #fef3c7 100%);
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-md);
+}
+
+.docs-page .guard-banner svg {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+/* ===== 비로그인 블러 처리 ===== */
+.docs-content-wrap.is-disabled {
+    filter: grayscale(0.2);
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* 잠금 오버레이 - UploadPage 스타일 */
+.docs-page .blocked-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    z-index: 2;
+    border: 1px dashed #e5e7eb;
+}
+
+.docs-page .blocked-overlay svg {
+    font-size: 18px;
+    color: #9ca3af;
+}
+
+.docs-page .blocked-overlay .blocked-text {
+    color: #374151;
+    font-weight: 600;
+}
+
+/* ===== 챗봇 사서 - Card Style ===== */
+.docs-librarian {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 16px);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.docs-librarian-header {
+    margin-bottom: 16px;
+}
+
+.docs-librarian-header h3 {
+    margin: 0 0 6px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.docs-librarian-header p {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.docs-librarian-search {
+    display: flex;
+    gap: 12px;
+}
+
+.docs-librarian-input {
+    flex: 1;
+    height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--border-color-strong, rgba(0,0,0,0.12));
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    background: var(--surface);
+    transition: all var(--transition-fast);
+}
+
+.docs-librarian-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.docs-librarian-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.docs-librarian-btn {
+    height: 44px;
+    padding: 0 24px;
+    background: var(--accent-blue);
+    color: #fff;
+    border: none;
+    border-radius: 22px;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+}
+
+.docs-librarian-btn:hover:not(:disabled) {
+    background: var(--accent-blue-hover);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+}
+
+.docs-librarian-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.docs-librarian-btn.is-loading {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* ===== 챗봇 사서 응답 풍선 ===== */
+.docs-librarian-bubble {
+    position: relative;
+    margin-top: 16px;
+    padding: 16px 40px 16px 16px;
+    border-radius: var(--radius);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.docs-librarian-bubble.success {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #166534;
+}
+
+.docs-librarian-bubble.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+}
+
+.docs-librarian-bubble-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+}
+
+.docs-librarian-bubble-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.docs-librarian-bubble-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.docs-librarian-bubble-content {
+    font-size: 0.875rem;
+    margin-bottom: 6px;
+}
+
+.docs-librarian-bubble-explanation {
+    font-size: 0.8125rem;
+    opacity: 0.9;
+    line-height: 1.5;
+}
+
+/* ===== Filters - Card Style ===== */
+.docs-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 16px);
+    padding: 16px 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.docs-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+    flex: 1;
+    max-width: 280px;
+}
+
+.docs-filter label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.docs-filter input {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color-strong, rgba(0,0,0,0.12));
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    background: var(--surface);
+    transition: all var(--transition-fast);
+}
+
+.docs-filter input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.docs-filter input::placeholder {
+    color: var(--text-tertiary);
+}
+
+/* ===== Errors & Empty ===== */
+.docs-error {
+    padding: 14px 16px;
+    color: #991b1b;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+}
+
+.docs-empty {
+    padding: 48px 24px;
+    background: var(--surface);
+    border: 1px dashed var(--border-color-strong, rgba(0,0,0,0.12));
+    border-radius: var(--radius-lg, 16px);
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+}
+
+/* ===== Table - Card Style ===== */
+.docs-table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg, 16px);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.docs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.docs-table th,
+.docs-table td {
+    padding: 12px 16px;
+    vertical-align: middle;
+    text-align: left;
+}
+
+.docs-table th {
+    background: var(--interactive-bg);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.docs-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.docs-table tbody tr:hover {
+    background: var(--sidebar-hover, #f1f3f4);
+}
+
+.docs-table tbody td {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.docs-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.docs-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.docs-sub {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.docs-muted {
+    color: var(--text-secondary);
+}
+
+/* ===== Column widths ===== */
+.col-index {
+    width: 48px;
+    text-align: center;
+    color: var(--text-tertiary);
+}
+
+.col-uploader {
+    width: 120px;
+}
+
+.col-date {
+    width: 150px;
+    white-space: nowrap;
+}
+
+.col-vis {
+    width: 80px;
+}
+
+.col-chunks {
+    width: 70px;
+    text-align: right;
+}
+
+.col-preview {
+    width: 80px;
+}
+
+.col-preview a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.col-preview a:hover {
+    text-decoration: underline;
+}
+
+.col-actions {
+    width: 100px;
+    text-align: right;
+}
+
+/* ===== Buttons - Use Global Styles ===== */
+.btn-reset {
+    height: 40px;
+    padding: 0 16px;
+    background: var(--interactive-bg);
+    border: 1px solid var(--border-color-strong, rgba(0,0,0,0.12));
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.btn-reset:hover {
+    background: var(--interactive-hover);
+    color: var(--text-primary);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+    .docs-page {
+        padding: 16px;
+    }
+
+    .docs-filters {
+        flex-direction: column;
+    }
+
+    .docs-filter {
+        max-width: none;
+        width: 100%;
+    }
+
+    .docs-librarian-search {
+        flex-direction: column;
+    }
+
+    .docs-librarian-btn {
+        width: 100%;
+    }
+
+    .docs-table-wrap {
+        overflow-x: auto;
+    }
+
+    .docs-table {
+        min-width: 800px;
+    }
+
+    .col-date,
+    .col-vis,
+    .col-chunks {
+        display: none;
+    }
+}

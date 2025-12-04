@@ -32,10 +32,6 @@ async def get_faq_list(
             ...
         ]
     """
-    logger.info(f"FAQ 요청 (force_refresh={force_refresh})")
-
     faq_list = await get_faq(force_refresh=force_refresh)
-
-    logger.info(f"FAQ 반환: {len(faq_list)}개")
-
+    logger.debug(f"FAQ 반환: {len(faq_list)}개")
     return faq_list

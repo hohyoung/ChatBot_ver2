@@ -1,30 +1,100 @@
-# Node / Frontend
-frontend/node_modules
-frontend/.vite
-frontend/dist
-*.log
-
-# Python / Backend
-backend/.venv
-backend/data
+# ===================================
+# Python
+# ===================================
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-.pytest_cache
+.Python
+*.so
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
 
-# Vector DB (Chroma persistence)
-backend/data/chroma/
+# Virtual environments
+.venv/
+venv/
+ENV/
+backend/.venv/
 
-# Env & local settings
+# ===================================
+# Node.js / Frontend
+# ===================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===================================
+# Environment & Secrets
+# ===================================
+.env
+.env.*
+!.env.example
 **/.env
 **/.env.*
-.DS_Store
+
+# ===================================
+# IDE & Editor
+# ===================================
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
 
-scripts
-*.sqlite3
-
-backend/data/uploads/
+# ===================================
+# Data & Storage (런타임 생성)
+# ===================================
+# ChromaDB 벡터 저장소
 backend/data/chroma/
+
+# 업로드 임시 파일
+backend/data/uploads/
+
+# 피드백 데이터
+backend/data/feedback/
+
+# 업로드된 문서 및 이미지
+backend/storage/
+
+# SQLite (개발용)
+*.sqlite3
+backend/app/db/*.sqlite3
+
+# ===================================
+# Logs
+# ===================================
+*.log
+logs/
+
+# ===================================
+# Misc
+# ===================================
+# 임시 파일
+*.tmp
+*.temp
+temp.txt
+nul
+
+# 테스트 스크립트 (선택적)
+backend/scripts/test_*.py
+
+# pip 잘못된 파일
+backend/=0.10.0
+
+# Claude 설정 (로컬용)
+.claude/
+.clauderc
+
+# 스크린샷 등 임시 이미지
+*.png
+!frontend/public/*.png
+!docs/**/*.png

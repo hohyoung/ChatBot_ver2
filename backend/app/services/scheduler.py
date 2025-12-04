@@ -9,7 +9,7 @@ import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.services.faq import generate_faq
+from app.services.faq import get_faq
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,8 @@ async def refresh_faq_task():
     매일 새벽 3시에 실행되어 FAQ를 새로 생성합니다.
     """
     try:
-        logger.info("FAQ 자동 갱신 작업 시작")
-        faq_list = await generate_faq(min_questions=100, top_n=10, days=7)
-        logger.info(f"FAQ 자동 갱신 완료: {len(faq_list)}개")
+        faq_list = await get_faq(force_refresh=True)
+        logger.debug(f"FAQ 자동 갱신: {len(faq_list)}개")
     except Exception as e:
         logger.error(f"FAQ 자동 갱신 실패: {e}")
 
@@ -38,7 +37,6 @@ def start_scheduler():
     global _scheduler
 
     if _scheduler is not None:
-        logger.warning("스케줄러가 이미 실행 중입니다")
         return
 
     _scheduler = AsyncIOScheduler()
@@ -53,7 +51,7 @@ def start_scheduler():
     )
 
     _scheduler.start()
-    logger.info("스케줄러 시작 완료")
+    logger.debug("스케줄러 시작")
 
 
 def stop_scheduler():
@@ -65,4 +63,4 @@ def stop_scheduler():
     if _scheduler is not None:
         _scheduler.shutdown()
         _scheduler = None
-        logger.info("스케줄러 종료 완료")
+        logger.debug("스케줄러 종료")
