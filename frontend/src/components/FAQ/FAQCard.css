@@ -23,7 +23,7 @@
 
 .faq-card-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* 상단 정렬 (멀티라인 대응) */
   justify-content: space-between;
   gap: 12px;
 }
@@ -32,10 +32,9 @@
   flex: 1;
   font-size: 14px;
   color: #24292e;
-  line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.6;
+  word-break: keep-all;      /* 한글 단어 단위 줄바꿈 */
+  overflow-wrap: break-word; /* 긴 단어 줄바꿈 */
 }
 
 .faq-count {

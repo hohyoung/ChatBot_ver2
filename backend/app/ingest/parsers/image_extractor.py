@@ -36,11 +36,12 @@ class ExtractedImage:
 
 def _classify_image_type(img: Image.Image) -> str:
     """
-    이미지 타입 분류 (간단한 휴리스틱)
+    이미지 타입 분류 (개선된 휴리스틱)
 
     표 특징:
-    - 가로/세로 비율이 극단적이지 않음 (0.3 < ratio < 3.0)
-    - 크기가 충분히 큼 (width > 200, height > 100)
+    - 충분히 큰 크기 (width > 400, height > 200)
+    - 가로로 넓은 비율 (0.8 < ratio < 4.0)
+    - 색상이 단순함 (주로 흑백 + 선)
 
     Args:
         img: PIL Image 객체
@@ -50,20 +51,65 @@ def _classify_image_type(img: Image.Image) -> str:
     """
     width, height = img.size
 
-    # 너무 작은 이미지는 무시
-    if width < 100 or height < 50:
+    # 너무 작은 이미지는 무시 (아이콘, 불릿 등)
+    if width < 150 or height < 80:
+        log.debug(f"[CLASSIFY] unknown (too small): {width}x{height}")
         return "unknown"
 
     aspect_ratio = width / height
 
-    # 표 휴리스틱: 적절한 비율 + 충분한 크기
-    # 색상 복잡도 체크 제거 - 안티앨리어싱으로 인해 표도 색상이 많을 수 있음
-    # 대신 크기와 비율로만 판단하고, Vision API가 최종 판단
-    if 0.3 < aspect_ratio < 3.0 and width > 200 and height > 100:
-        # 충분히 큰 이미지는 일단 표로 시도 (Vision API가 NO_TABLE 반환 가능)
-        return "table"
+    # 극단적인 비율 (배너, 로고, 구분선 등)
+    if aspect_ratio > 6.0 or aspect_ratio < 0.2:
+        log.debug(f"[CLASSIFY] unknown (extreme ratio): {aspect_ratio:.2f}")
+        return "unknown"
 
-    # 극단적인 비율 (배너, 로고 등)은 figure로 분류
+    # 색상 복잡도 분석 (표는 주로 단순한 색상)
+    try:
+        # RGB로 변환
+        if img.mode != 'RGB':
+            img_rgb = img.convert('RGB')
+        else:
+            img_rgb = img
+
+        # 색상 수 계산 (축소 후 분석하여 속도 향상)
+        small_img = img_rgb.resize((100, 100)) if width > 100 and height > 100 else img_rgb
+        colors = small_img.getcolors(maxcolors=5000)  # 최대 5000개 색상
+
+        if colors:
+            num_colors = len(colors)
+        else:
+            # 색상이 너무 많으면 (>5000) 복잡한 이미지로 판단
+            num_colors = 10000
+
+        # 표 판단 기준:
+        # 1) 충분히 큰 크기 (표는 보통 큼)
+        # 2) 적절한 비율 (표는 보통 가로로 넓음)
+        # 3) 색상이 단순함 (표는 주로 흑백, 선, 텍스트)
+        is_large_enough = width > 400 and height > 200
+        is_table_ratio = 0.8 < aspect_ratio < 4.0
+        is_simple_colors = num_colors < 500  # 표는 색상이 단순
+
+        log.debug(
+            f"[CLASSIFY] {width}x{height}, ratio={aspect_ratio:.2f}, "
+            f"colors={num_colors}, large={is_large_enough}, "
+            f"ratio_ok={is_table_ratio}, simple={is_simple_colors}"
+        )
+
+        # 표로 분류하려면: 큰 크기 + 적절한 비율 + 단순한 색상
+        if is_large_enough and is_table_ratio and is_simple_colors:
+            log.debug(f"[CLASSIFY] table (large, good ratio, simple colors)")
+            return "table"
+
+        # 중간 크기 + 매우 단순한 색상 (작은 표)
+        if width > 300 and height > 150 and is_table_ratio and num_colors < 200:
+            log.debug(f"[CLASSIFY] table (medium size, very simple colors)")
+            return "table"
+
+    except Exception as e:
+        log.warning(f"[CLASSIFY] Color analysis failed: {e}")
+
+    # 그 외는 figure로 분류
+    log.debug(f"[CLASSIFY] figure (default)")
     return "figure"
 
 

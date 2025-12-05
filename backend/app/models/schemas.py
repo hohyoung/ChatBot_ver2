@@ -177,7 +177,6 @@ class ChatAnswer(StrictModel):
 
     # 디버깅/추적용
     answer_id: Optional[str] = None
-    used_tags: List[str] = Field(default_factory=list)
     latency_ms: Optional[int] = None
 
     # 메타
@@ -190,7 +189,6 @@ class ChatDebugResponse(StrictModel):
     answer: str
     used_chunks: List[Chunk] = Field(default_factory=list)
     candidates: List[ScoredChunk] = Field(default_factory=list)
-    tags: List[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=_now_iso)
     version: str = Field(default=SCHEMA_VERSION)
 

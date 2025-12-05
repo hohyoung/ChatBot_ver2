@@ -499,7 +499,7 @@ async def debug_search(
 
         results = []
         for i, (doc, meta, dist) in enumerate(zip(docs, metas, dists)):
-            similarity = 1.0 - dist  # cosine distance → similarity
+            similarity = 1.0 - (dist / 2.0)  # cosine distance (0~2) → similarity (0~1)
             results.append({
                 "rank": i + 1,
                 "chunk_id": meta.get("chunk_id"),

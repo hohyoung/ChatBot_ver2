@@ -27,7 +27,7 @@ from app.rag.query_decomposer import decompose_query, SubQuery
 # 기존 모듈
 from app.rag.retriever import retrieve
 from app.rag.generator import generate_answer_stream
-from app.ingest.tagger import tag_query
+# tag_query 제거 - Query 태깅 비활성화 (방안 3: 순수 벡터 검색)
 
 log = get_logger("app.rag.orchestrator")
 
@@ -94,7 +94,7 @@ async def orchestrate_gar_phase1(question: str) -> GARContext:
     )
 
     # 2단계: 쿼리 분해
-    log.info("[2/3] 쿼리 분해")
+    log.info("[2/2] 쿼리 분해")
     t3 = time.perf_counter()
 
     subqueries = await decompose_query(question, doc_context, intent)
@@ -102,7 +102,7 @@ async def orchestrate_gar_phase1(question: str) -> GARContext:
     t4 = time.perf_counter()
     metrics.query_decomposition_ms = (t4 - t3) * 1000
     log.info(
-        "[2/3] 완료: %d개 서브쿼리 생성 (%.1f ms)",
+        "[2/2] 완료: %d개 서브쿼리 생성 (%.1f ms)",
         len(subqueries),
         metrics.query_decomposition_ms,
     )
@@ -110,17 +110,11 @@ async def orchestrate_gar_phase1(question: str) -> GARContext:
     for i, sq in enumerate(subqueries, start=1):
         log.debug("  서브쿼리 %d: %r (focus=%r, priority=%d)", i, sq.text, sq.focus, sq.priority)
 
-    # 3단계: 태깅 (기존 tag_query 사용)
-    log.info("[3/3] 태깅")
-    t5 = time.perf_counter()
-
-    # 모든 서브쿼리 텍스트 결합하여 태깅
-    combined_query = " ".join(sq.text for sq in subqueries)
-    used_tags = await tag_query(combined_query, max_tags=6)
-
-    t6 = time.perf_counter()
-    metrics.tagging_ms = (t6 - t5) * 1000
-    log.info("[3/3] 완료: tags=%s (%.1f ms)", used_tags, metrics.tagging_ms)
+    # 태깅 단계 제거 (방안 3: Query 태깅 비활성화)
+    # 한글 질문 ↔ 영어 태그 불일치 문제로 효과 없음
+    used_tags = []  # 빈 태그 리스트
+    metrics.tagging_ms = 0.0
+    log.info("[태깅 비활성화] Query 태깅 제거됨 - 순수 벡터 검색 사용")
 
     # 전체 시간
     t_end = time.perf_counter()
@@ -292,17 +286,15 @@ async def orchestrate_gar_stream(
         from app.rag.reranker import LLMReranker
 
         reranker = LLMReranker(
-            w_llm=0.5,  # LLM 점수 가중치
+            w_llm=0.6,  # LLM 점수 가중치
             w_feedback=0.2,  # 피드백 점수 가중치
-            w_tag=0.15,  # 태그 매칭 가중치
-            w_similarity=0.15,  # 유사도 가중치
+            w_similarity=0.2,  # 유사도 가중치 (태그 가중치 제거됨)
             batch_size=5,  # 배치 크기
         )
 
         candidates = await reranker.rerank(
             question=question,
             chunks=candidates,
-            query_tags=context.used_tags,
             top_k=5,  # 최종 5개 선택
         )
 

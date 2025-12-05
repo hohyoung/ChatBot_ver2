@@ -13,9 +13,22 @@ logger = logging.getLogger("app.rag.retriever")
 
 
 def _similarity_from_distance(d: float) -> float:
-    # chroma distance = cosine distance, similarity = 1 - distance (0~1)
+    """
+    ChromaDB cosine distance를 similarity로 변환.
+
+    ChromaDB cosine distance 범위: 0~2
+    - 0: 완전히 동일한 벡터
+    - 1: 직교 (무관)
+    - 2: 완전히 반대 벡터
+
+    변환: similarity = 1 - (distance / 2) → 0~1 범위
+    - distance=0 → similarity=1.0 (완전 일치)
+    - distance=1 → similarity=0.5 (무관)
+    - distance=2 → similarity=0.0 (반대)
+    """
     try:
-        sim = 1.0 - float(d)
+        # cosine distance (0~2) → similarity (0~1)
+        sim = 1.0 - (float(d) / 2.0)
     except Exception:
         sim = 0.0
     return max(0.0, min(1.0, sim))
@@ -32,30 +45,9 @@ def _feedback_factor(meta: Dict[str, Any]) -> float:
     return 0.5 + p  # 0.5~1.5
 
 
-def _tag_boost(meta: Dict[str, Any], query_tags: Optional[Sequence[str]]) -> float:
-    """
-    메타의 tags_json(list) 또는 tags(CSV)에 대해 질의 태그와의 교집합 개수로 1 + 0.05*k 부스트.
-    """
-    if not query_tags:
-        return 1.0
-
-    tags: List[str] = []
-    if "tags_json" in meta and isinstance(meta["tags_json"], str):
-        # sanitize_metadata가 JSON 문자열로 저장함
-        try:
-            import json
-
-            tags = json.loads(meta["tags_json"]) or []
-        except Exception:
-            tags = []
-    elif "tags" in meta and isinstance(meta["tags"], str):
-        tags = [t.strip() for t in meta["tags"].split(",") if t.strip()]
-
-    if not tags:
-        return 1.0
-
-    overlap = len(set(t.lower() for t in tags) & set(t.lower() for t in query_tags))
-    return 1.0 + 0.05 * overlap  # 겹칠수록 소폭 가산
+# _tag_boost 함수 제거 (방안 3: Query 태깅 비활성화)
+# 한글 질문 ↔ 영어 태그 불일치로 인해 실질적 효과 없음
+# 순수 벡터 검색 + 피드백 기반 스코어링만 사용
 
 
 def _to_chunk_out(chunk_id: str, content: str, meta: Dict[str, Any]) -> ChunkOut:
@@ -187,15 +179,13 @@ async def retrieve(
 
         sim = _similarity_from_distance(
             dist
-        )  # 0~1 유사도 :contentReference[oaicite:6]{index=6}
+        )  # 0~1 유사도
         ff_meta = _feedback_factor(
             meta
-        )  # 메타 기반 폴백 계산 :contentReference[oaicite:7]{index=7}
-        ff = float(boost_map.get(cid, ff_meta))  # [NEW] 파일기반 factor 우선 적용
-        tb = _tag_boost(
-            meta, tags
-        )  # 태그 교집합 부스트 :contentReference[oaicite:8]{index=8}
-        final = sim * ff * tb
+        )  # 메타 기반 폴백 계산
+        ff = float(boost_map.get(cid, ff_meta))  # 파일기반 factor 우선 적용
+        # tag_boost 제거 (방안 3: Query 태깅 비활성화)
+        final = sim * ff
 
         chunk = _to_chunk_out(chunk_id=cid, content=doc, meta=meta)
         #chunk.focus_sentence = _pick_focus_sentence(question, chunk.content)
@@ -311,8 +301,8 @@ async def retrieve_multi_query(
             # 스코어 계산 (기존 retrieve() 로직 재사용)
             sim = _similarity_from_distance(dist)
             ff = _feedback_factor(meta)
-            tb = _tag_boost(meta, tags)
-            base_score = sim * ff * tb
+            # tag_boost 제거 (방안 3: Query 태깅 비활성화)
+            base_score = sim * ff
 
             # 쿼리 가중치 적용
             weighted_score = base_score * query_weight

@@ -177,11 +177,20 @@ def _calculate_confidence(table_data: List[List[str]]) -> float:
     - 빈 셀이 너무 많음
     - 행별 열 수가 불일치
     - 데이터 행이 너무 적음
+    - 열 수가 너무 적음 (1~2열은 표가 아닐 가능성 높음)
+    - 셀 내용이 너무 길음 (문장/문단이면 표가 아님)
     """
     if not table_data or len(table_data) < 2:
         return 0.0
 
     confidence = 1.0
+
+    # 0. 열 수 체크 (1~2열은 표가 아닐 가능성 높음)
+    col_count = len(table_data[0]) if table_data else 0
+    if col_count < 2:
+        return 0.0  # 1열은 표가 아님
+    if col_count == 2:
+        confidence -= 0.3  # 2열은 낮은 신뢰도
 
     # 1. 빈 셀 비율 체크
     total_cells = sum(len(row) for row in table_data)
@@ -201,6 +210,17 @@ def _calculate_confidence(table_data: List[List[str]]) -> float:
     # 3. 데이터 행 수 체크
     if len(table_data) < 3:
         confidence -= 0.1
+
+    # 4. 셀 내용 길이 체크 (표 셀은 보통 짧음)
+    # 긴 텍스트(50자 이상)가 많으면 본문 텍스트일 가능성
+    long_cells = 0
+    for row in table_data:
+        for cell in row:
+            if len(_clean_cell(cell)) > 50:
+                long_cells += 1
+    long_cell_ratio = long_cells / total_cells if total_cells > 0 else 0
+    if long_cell_ratio > 0.3:
+        confidence -= 0.4  # 긴 셀이 30% 이상이면 표 아닐 가능성 높음
 
     return max(0.0, confidence)
 
@@ -230,22 +250,31 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                 valid_tables = []
 
                 # 여러 전략으로 표 감지 시도
+                # 우선순위: 선 기반 > 혼합 > 텍스트 기반 (텍스트 전략은 오탐이 많음)
                 strategies = [
-                    # 1) 선 기반 (테두리가 있는 표)
+                    # 1) 선 기반 (테두리가 있는 표) - 가장 정확
                     {
                         "vertical_strategy": "lines",
                         "horizontal_strategy": "lines",
                         "snap_tolerance": 5,
                         "join_tolerance": 5,
                     },
-                    # 2) 텍스트 기반 (선이 없는 표)
+                    # 2) 혼합 (선 + 텍스트) - 부분 테두리 표
                     {
-                        "vertical_strategy": "text",
+                        "vertical_strategy": "lines",
                         "horizontal_strategy": "text",
                         "snap_tolerance": 5,
                         "join_tolerance": 5,
-                        "min_words_vertical": 3,
-                        "min_words_horizontal": 3,
+                    },
+                    # 3) 텍스트 기반 (선이 없는 표) - 엄격한 조건
+                    # 오탐 방지: 최소 단어 수 증가
+                    {
+                        "vertical_strategy": "text",
+                        "horizontal_strategy": "text",
+                        "snap_tolerance": 3,
+                        "join_tolerance": 3,
+                        "min_words_vertical": 5,  # 3 → 5
+                        "min_words_horizontal": 5,  # 3 → 5
                     },
                 ]
 
@@ -260,8 +289,14 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                             table_area = (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1])
                             area_ratio = table_area / page_area
 
-                            # 페이지의 3% ~ 70% 사이인 표만 유효 (범위 확대)
-                            if 0.03 < area_ratio < 0.70:
+                            # 면적 비율 조건 (전략에 따라 다름)
+                            # - 선 기반: 3% ~ 60% (표 테두리가 명확하므로 넓은 범위)
+                            # - 텍스트 기반: 5% ~ 40% (오탐 방지를 위해 좁은 범위)
+                            is_text_strategy = strategy.get("vertical_strategy") == "text"
+                            min_ratio = 0.05 if is_text_strategy else 0.03
+                            max_ratio = 0.40 if is_text_strategy else 0.60
+
+                            if min_ratio < area_ratio < max_ratio:
                                 valid_tables.append(t)
                                 log.debug(
                                     f"[TABLE] Valid table found: page={page_num}, "
@@ -271,7 +306,7 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                             else:
                                 log.debug(
                                     f"[TABLE] Skipping table: page={page_num}, "
-                                    f"area_ratio={area_ratio:.2%} (out of range)"
+                                    f"area_ratio={area_ratio:.2%} (out of range {min_ratio:.0%}-{max_ratio:.0%})"
                                 )
                     except Exception as e:
                         log.debug(f"[TABLE] Strategy {strategy} failed: {e}")
@@ -290,10 +325,27 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                     if not table_data or len(table_data) < 2:
                         continue
 
+                    # 추가 검증: 최소 열 수
+                    col_count = len(table_data[0]) if table_data else 0
+                    if col_count < 2:
+                        log.debug(
+                            f"[TABLE] Skipping single-column table: page={page_num}, "
+                            f"index={table_idx}, cols={col_count}"
+                        )
+                        continue
+
+                    # 추가 검증: 행 수
+                    if len(table_data) < 2:
+                        log.debug(
+                            f"[TABLE] Skipping single-row table: page={page_num}, "
+                            f"index={table_idx}, rows={len(table_data)}"
+                        )
+                        continue
+
                     # 신뢰도 계산
                     confidence = _calculate_confidence(table_data)
 
-                    if confidence < 0.3:
+                    if confidence < 0.5:  # 0.3 → 0.5 (더 엄격한 임계값)
                         log.debug(
                             f"[TABLE] Skipping low-confidence table: "
                             f"page={page_num}, index={table_idx}, confidence={confidence:.2f}"

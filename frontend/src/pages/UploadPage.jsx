@@ -14,12 +14,25 @@ import {
 } from "react-icons/fa";
 
 /* 상태 표시 */
-const StatusDisplay = ({ status, job }) => {
+const StatusDisplay = ({ status, job, isSubmitting }) => {
     // 진행률 계산
     const getProgress = () => {
         if (!status || !status.total || status.total === 0) return 0;
         return Math.round((status.processed / status.total) * 100);
     };
+
+    // ✅ 버튼 클릭 직후 (서버 응답 대기 중)
+    if (isSubmitting && !job && !status) {
+        return (
+            <div className="status-item info">
+                <div className="status-icon"><FaSpinner className="fa-spin" /></div>
+                <div className="status-content">
+                    <h4>파일 전송 중...</h4>
+                    <p>서버로 파일을 전송하고 있습니다. 잠시만 기다려주세요.</p>
+                </div>
+            </div>
+        );
+    }
 
     if (!status && !job) {
         return (
@@ -107,13 +120,14 @@ export default function UploadPage() {
     const [user, setUser] = useState(null);
     const [errorMsg, setErrorMsg] = useState("");
     const [isDragOver, setIsDragOver] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false); // 버튼 클릭 즉시 블로킹용
     const timerRef = useRef(null);
     const fileInputRef = useRef(null);
 
     const isLoggedIn = !!user;
     // ✅ 업로드 허용 등급: 1~3 허용, 4(차단)는 불가
     const canUploadByLevel = isLoggedIn && Number(user?.security_level) <= 3;
-    const isUploading = status?.status === "running" || status?.status === "pending" || (job && !status);
+    const isUploading = isSubmitting || status?.status === "running" || status?.status === "pending" || (job && !status);
     const disabled = !canUploadByLevel || isUploading; // 비로그인 or 4등급 or 업로딩 중
 
     // 진행 중인 업로드 작업 복원
@@ -167,7 +181,14 @@ export default function UploadPage() {
     }, [restoreActiveJobs]);
 
     const pollStatus = async (job_id) => {
-        if (timerRef.current) clearInterval(timerRef.current);
+        // 기존 폴링 정리
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        // ✅ 서버 응답 받았으면 submitting 해제 (job이 생성됨)
+        setIsSubmitting(false);
 
         // 즉시 첫 번째 상태 조회 (폴링 시작 전)
         try {
@@ -175,6 +196,8 @@ export default function UploadPage() {
             setStatus(initialStat);
             if (initialStat.status === "succeeded" || initialStat.status === "failed") {
                 setFiles([]);
+                setJob(null); // ✅ 완료 시 job도 초기화
+                console.log("[UploadPage] Job already completed, no polling needed");
                 return; // 이미 완료됨, 폴링 불필요
             }
         } catch (e) {
@@ -182,14 +205,17 @@ export default function UploadPage() {
         }
 
         // 이후 주기적 폴링
+        console.log("[UploadPage] Starting polling for job:", job_id);
         timerRef.current = setInterval(async () => {
             try {
                 const stat = await get(`/docs/${encodeURIComponent(job_id)}/status`);
                 setStatus(stat);
                 if (stat.status === "succeeded" || stat.status === "failed") {
+                    console.log("[UploadPage] Job completed, stopping polling:", stat.status);
                     clearInterval(timerRef.current);
                     timerRef.current = null;
                     setFiles([]); // 완료 후 비우기
+                    setJob(null); // ✅ 완료 시 job도 초기화
                 }
             } catch {
                 setErrorMsg("상태를 가져오는 데 실패했습니다.");
@@ -205,6 +231,9 @@ export default function UploadPage() {
             setErrorMsg("업로드할 파일을 선택해주세요.");
             return;
         }
+
+        // ✅ 버튼 클릭 즉시 블로킹 (네트워크 요청 전에!)
+        setIsSubmitting(true);
         setJob(null); setStatus(null); setErrorMsg("");
 
         const formData = new FormData();
@@ -212,7 +241,6 @@ export default function UploadPage() {
         formData.append("visibility", "public");
 
         try {
-            // 💡 복잡한 fetch 로직이 이 한 줄로 깔끔하게 정리됩니다.
             const result = await docsApi.upload(formData);
 
             setJob(result);
@@ -225,6 +253,8 @@ export default function UploadPage() {
             } else {
                 setErrorMsg(err?.message || "파일 업로드에 실패했습니다.");
             }
+            // ❌ 에러 시 블로킹 해제
+            setIsSubmitting(false);
         }
     };
 
@@ -365,7 +395,7 @@ export default function UploadPage() {
                 <h3>업로드 상태</h3>
                 <div className="card">
                     <div className="status-box">
-                        <StatusDisplay status={status} job={job} />
+                        <StatusDisplay status={status} job={job} isSubmitting={isSubmitting} />
                     </div>
                 </div>
             </div>

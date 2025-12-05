@@ -53,7 +53,7 @@ async def process_table_image(image: ExtractedImage, retry_count: int = 3) -> Op
             # Vision API 호출 (비동기)
             client = get_async_client()
             response = await client.chat.completions.create(
-                model=settings.openai_model,  # gpt-4o supports vision
+                model=settings.openai_advanced_model,  # gpt-4o (Vision 정확도 향상)
                 messages=[
                     {
                         "role": "system",
@@ -199,7 +199,7 @@ async def process_figure_image(image: ExtractedImage, retry_count: int = 3) -> O
             # Vision API 호출 (비동기)
             client = get_async_client()
             response = await client.chat.completions.create(
-                model=settings.openai_model,  # gpt-4o supports vision
+                model=settings.openai_advanced_model,  # gpt-4o (Vision 정확도 향상)
                 messages=[
                     {
                         "role": "system",
@@ -375,9 +375,10 @@ async def process_complex_table_from_image(
             base64_image = _encode_image_to_base64(image_data)
             image_url = f"data:image/{image_format};base64,{base64_image}"
 
+            # 이미지 이해는 복잡한 추론이 필요하므로 고급 모델 사용
             client = get_async_client()
             response = await client.chat.completions.create(
-                model=settings.openai_model,
+                model=settings.openai_advanced_model,  # gpt-4o (Vision 정확도 향상)
                 messages=[
                     {
                         "role": "system",

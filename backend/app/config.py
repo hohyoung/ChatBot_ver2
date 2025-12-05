@@ -54,6 +54,8 @@ class Settings:
         _getenv("OPENAI_BASE_URL") or _getenv("OPENAI_API_BASE")
     )
     openai_model: str = _getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+    # 고급 모델: 복잡한 추론이 필요한 작업용 (답변 생성, 리랭킹, Vision)
+    openai_advanced_model: str = _getenv("OPENAI_ADVANCED_MODEL", "gpt-4o")
     openai_embed_model: str = _getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 
     # Vector DB (Chroma)

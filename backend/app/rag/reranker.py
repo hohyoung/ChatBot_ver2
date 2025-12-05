@@ -7,8 +7,8 @@ LLM-based Reranker - GAR Phase 3 + Phase 4 최적화
 전략:
 1. LLM 관련성 평가 (0.0~1.0 점수)
 2. 피드백 점수 통합 (fb_pos, fb_neg)
-3. 태그 매칭 보너스
-4. 최종 점수 = w1*LLM점수 + w2*피드백점수 + w3*태그점수 + w4*유사도점수
+3. 유사도 점수 통합
+4. 최종 점수 = w1*LLM점수 + w2*피드백점수 + w3*유사도점수
 
 Phase 4 최적화:
 - Redis 캐싱 (LLM 평가 결과)
@@ -34,11 +34,13 @@ from app.services.openai_client import get_async_client
 from app.services.logging import get_logger
 from app.services.redis_client import get_redis_client, is_redis_available
 from app.models.schemas import ScoredChunk
+from app.services import debug_logger as dbg
 
 log = get_logger("app.rag.reranker")
 
-# 리랭킹 모델 설정 (gpt-4o-mini로 변경하여 속도 향상)
-RERANK_MODEL = "gpt-4o-mini"
+# 리랭킹 모델 설정: 문서 관련성 판단에 고급 모델 사용
+from app.config import settings
+RERANK_MODEL = settings.openai_advanced_model  # gpt-4o (정확도 향상)
 
 # 캐시 설정 (P1-1 성능 최적화)
 RERANK_CACHE_TTL = 3600 * 6  # 6시간 (기존 1시간 → 6시간)
@@ -61,7 +63,7 @@ class LLMReranker:
     정확도 우선 전략:
     - 빠른 응답보다 정확한 답변이 최우선
     - LLM을 사용해 청크와 질문의 의미적 관련성 평가
-    - 피드백, 태그, 유사도 점수를 통합하여 최종 순위 결정
+    - 피드백, 유사도 점수를 통합하여 최종 순위 결정
 
     Phase 4 최적화:
     - Redis 캐싱으로 LLM 호출 횟수 감소
@@ -72,27 +74,24 @@ class LLMReranker:
     def __init__(
         self,
         *,
-        w_llm: float = 0.5,  # LLM 점수 가중치
+        w_llm: float = 0.6,  # LLM 점수 가중치
         w_feedback: float = 0.2,  # 피드백 점수 가중치
-        w_tag: float = 0.15,  # 태그 매칭 가중치
-        w_similarity: float = 0.15,  # 코사인 유사도 가중치
+        w_similarity: float = 0.2,  # 코사인 유사도 가중치
         batch_size: int = 5,  # LLM 배치 처리 크기
         use_cache: bool = True,  # Redis 캐시 사용 여부
         dynamic_batch: bool = True,  # 동적 배치 크기 조정
     ):
         """
         Args:
-            w_llm: LLM 관련성 점수 가중치 (기본: 0.5)
+            w_llm: LLM 관련성 점수 가중치 (기본: 0.6)
             w_feedback: 피드백 점수 가중치 (기본: 0.2)
-            w_tag: 태그 매칭 점수 가중치 (기본: 0.15)
-            w_similarity: 유사도 점수 가중치 (기본: 0.15)
+            w_similarity: 유사도 점수 가중치 (기본: 0.2)
             batch_size: LLM 배치 처리 크기 (기본: 5)
             use_cache: Redis 캐싱 활성화 (기본: True)
             dynamic_batch: 동적 배치 크기 조정 (기본: True)
         """
         self.w_llm = w_llm
         self.w_feedback = w_feedback
-        self.w_tag = w_tag
         self.w_similarity = w_similarity
         self.batch_size = batch_size
         self.use_cache = use_cache
@@ -104,7 +103,7 @@ class LLMReranker:
         self.llm_calls = 0
 
         # 가중치 합이 1.0인지 확인 (경고만)
-        total_weight = w_llm + w_feedback + w_tag + w_similarity
+        total_weight = w_llm + w_feedback + w_similarity
         if abs(total_weight - 1.0) > 0.01:
             log.warning(
                 f"[RERANKER] Weight sum is {total_weight:.2f}, not 1.0. "
@@ -134,7 +133,6 @@ class LLMReranker:
         self,
         question: str,
         chunks: List[ScoredChunk],
-        query_tags: Optional[List[str]] = None,
         top_k: int = 5,
     ) -> List[ScoredChunk]:
         """
@@ -148,7 +146,6 @@ class LLMReranker:
         Args:
             question: 사용자 질문
             chunks: 검색된 청크 리스트 (ScoredChunk)
-            query_tags: 질문에서 추출된 태그 (옵션)
             top_k: 최종 선택할 청크 개수 (기본: 5)
 
         Returns:
@@ -159,13 +156,15 @@ class LLMReranker:
             >>> reranked = await reranker.rerank(
             ...     question="연차는 몇 일인가요?",
             ...     chunks=scored_chunks,
-            ...     query_tags=["vacation", "hr-policy"],
             ...     top_k=5
             ... )
         """
         if not chunks:
             log.warning("[RERANK] No chunks to rerank")
             return []
+
+        # [DEBUG] 리랭킹 시작 로깅
+        dbg.log_reranking_start(question, len(chunks))
 
         log.info(
             f"[RERANK] Starting reranking: {len(chunks)} chunks → Top {top_k}"
@@ -178,19 +177,20 @@ class LLMReranker:
         # 1단계: LLM 관련성 평가 (배치 처리 + 캐싱)
         llm_scores = await self._evaluate_relevance_batch(question, chunks, batch_size)
 
-        # 2단계: 점수 통합 (LLM + 피드백 + 태그 + 유사도)
+        # [DEBUG] LLM 점수 로깅
+        dbg.log_reranking_llm_scores(llm_scores, chunks)
+
+        # 2단계: 점수 통합 (LLM + 피드백 + 유사도)
         reranked = []
         for i, chunk in enumerate(chunks):
             llm_score = llm_scores.get(i, 0.0)
             feedback_score = self._calculate_feedback_score(chunk)
-            tag_score = self._calculate_tag_score(chunk, query_tags or [])
             similarity_score = chunk.similarity or 0.0
 
             # 최종 점수 계산
             final_score = (
                 self.w_llm * llm_score
                 + self.w_feedback * feedback_score
-                + self.w_tag * tag_score
                 + self.w_similarity * similarity_score
             )
 
@@ -201,7 +201,6 @@ class LLMReranker:
             reason = (
                 f"LLM={llm_score:.2f}, "
                 f"FB={feedback_score:.2f}, "
-                f"Tag={tag_score:.2f}, "
                 f"Sim={similarity_score:.2f}"
             )
             if reason not in chunk.reasons:
@@ -214,6 +213,9 @@ class LLMReranker:
 
         # 4단계: Top-K 선택
         selected = reranked[:top_k]
+
+        # [DEBUG] 리랭킹 최종 결과 로깅
+        dbg.log_reranking_final_scores(selected)
 
         log.info(
             f"[RERANK] Completed: Top {len(selected)} chunks selected\n"
@@ -348,8 +350,9 @@ class LLMReranker:
         # 프롬프트 구성
         chunks_text = []
         for i, sc in enumerate(batch):
-            chunk_preview = sc.chunk.content[:500]  # 500자 미리보기
-            chunks_text.append(f"청크 {i}: {chunk_preview}")
+            doc_title = sc.chunk.doc_title or "제목 없음"
+            chunk_preview = sc.chunk.content[:800]  # 800자 미리보기 (더 많은 컨텍스트)
+            chunks_text.append(f"청크 {i} (문서: {doc_title}):\n{chunk_preview}")
 
         prompt = f"""다음은 사용자 질문과 검색된 문서 청크들입니다.
 
@@ -358,25 +361,35 @@ class LLMReranker:
 **청크 목록**:
 {chr(10).join(chunks_text)}
 
-각 청크가 질문에 답변하는 데 얼마나 관련이 있는지 0.0~1.0 점수로 평가해주세요.
+각 청크가 질문에 **실제로 답변할 수 있는 정보를 담고 있는지** 0.0~1.0 점수로 평가해주세요.
 
 **평가 기준**:
-- 1.0: 질문에 직접적으로 답변할 수 있는 내용
-- 0.7~0.9: 질문과 관련 있지만 부분적인 답변만 가능
+- 1.0: 질문에 직접 답변할 수 있는 **구체적인 정보**가 포함됨
+- 0.7~0.9: 관련 정보가 있지만 부분적인 답변만 가능
 - 0.4~0.6: 약간 관련 있으나 답변에 도움이 제한적
 - 0.1~0.3: 거의 관련 없음
 - 0.0: 완전히 무관
 
+**낮은 점수(0.1~0.3)를 줘야 하는 경우**:
+- 빈 양식/서식/템플릿 (빈칸만 있고 실제 데이터가 없는 문서)
+- 목차, 색인, 부서명 목록만 있는 내용
+- 관련 키워드는 있지만 실제 답변에 필요한 정보가 없는 경우
+
+**높은 점수(0.7~1.0)를 줘야 하는 경우**:
+- 구체적인 수치, 기준, 조건이 명시된 경우
+- 실제 규정, 절차, 방법이 설명된 경우
+- 질문에 대한 답변을 직접 도출할 수 있는 내용
+
 **응답 형식** (JSON):
 ```json
 [
-  {{"chunk_index": 0, "relevance": 0.95, "reason": "질문의 핵심 내용을 포함"}},
-  {{"chunk_index": 1, "relevance": 0.6, "reason": "부분적으로 관련"}},
+  {{"chunk_index": 0, "relevance": 0.9, "reason": "구체적인 기준 포함"}},
+  {{"chunk_index": 1, "relevance": 0.2, "reason": "빈 양식"}},
   ...
 ]
 ```
 
-JSON만 응답하세요. 다른 텍스트는 포함하지 마세요.
+JSON만 응답하세요.
 """
 
         try:
@@ -394,6 +407,11 @@ JSON만 응답하세요. 다른 텍스트는 포함하지 마세요.
             content = response.choices[0].message.content
             log.debug(f"[RERANK] LLM response: {content[:200]}...")
 
+            # [DEBUG] LLM 응답 전체를 파일에 기록
+            dbg.log("")
+            dbg.log(f"[리랭커 LLM 응답 원본]")
+            dbg.log(content[:500])
+
             # JSON 파싱
             try:
                 # JSON 배열 추출 (코드 블록 제거)
@@ -410,20 +428,45 @@ JSON만 응답하세요. 다른 텍스트는 포함하지 마세요.
 
                 # 배열이 아니면 배열로 감싸기
                 if isinstance(parsed, dict):
+                    dbg.log(f"[리랭커] parsed는 dict, keys={list(parsed.keys())}")
                     # {"scores": [...]} 형태인 경우
                     if "scores" in parsed:
                         parsed = parsed["scores"]
-                    # 단일 객체인 경우 배열로
+                    # {"results": [...]} 형태인 경우
+                    elif "results" in parsed:
+                        parsed = parsed["results"]
+                    # {"evaluations": [...]} 형태인 경우
+                    elif "evaluations" in parsed:
+                        parsed = parsed["evaluations"]
+                    # 배열 형태의 값이 있는지 찾기
                     else:
-                        parsed = [parsed]
+                        for key, value in parsed.items():
+                            if isinstance(value, list) and len(value) > 0:
+                                dbg.log(f"[리랭커] 배열 필드 발견: {key}")
+                                parsed = value
+                                break
+                        else:
+                            # 단일 객체인 경우 배열로
+                            parsed = [parsed]
 
                 scores_list = [RelevanceScore(**item) for item in parsed]
+                dbg.log(f"[리랭커] 파싱 성공: {len(scores_list)}개 점수")
 
             except json.JSONDecodeError as e:
                 log.warning(f"[RERANK] JSON parse error: {e}, using fallback")
+                dbg.log(f"[리랭커] JSON 파싱 오류: {e}", "ERROR")
                 # 폴백: 모든 청크에 0.5 점수
                 scores_list = [
                     RelevanceScore(chunk_index=i, relevance=0.5, reason="Parse error")
+                    for i in range(len(batch))
+                ]
+            except Exception as e:
+                log.warning(f"[RERANK] Pydantic validation error: {e}, using fallback")
+                dbg.log(f"[리랭커] Pydantic 검증 오류: {e}", "ERROR")
+                dbg.log(f"[리랭커] parsed 내용: {str(parsed)[:300]}")
+                # 폴백: 모든 청크에 0.5 점수
+                scores_list = [
+                    RelevanceScore(chunk_index=i, relevance=0.5, reason="Validation error")
                     for i in range(len(batch))
                 ]
 
@@ -468,46 +511,12 @@ JSON만 응답하세요. 다른 텍스트는 포함하지 마세요.
 
         return positive_ratio
 
-    def _calculate_tag_score(
-        self, chunk: ScoredChunk, query_tags: List[str]
-    ) -> float:
-        """
-        태그 매칭 점수 계산 (0.0~1.0)
-
-        Args:
-            chunk: ScoredChunk
-            query_tags: 질문 태그 리스트
-
-        Returns:
-            태그 매칭 비율 (0.0~1.0)
-        """
-        if not query_tags:
-            return 0.5  # 중립
-
-        chunk_tags = set(chunk.chunk.tags or [])
-        query_tags_set = set(query_tags)
-
-        # Jaccard 유사도
-        if not chunk_tags and not query_tags_set:
-            return 1.0
-
-        intersection = len(chunk_tags & query_tags_set)
-        union = len(chunk_tags | query_tags_set)
-
-        if union == 0:
-            return 0.0
-
-        jaccard = intersection / union
-
-        return jaccard
-
-
 # ====================================================================
 # 간단한 휴리스틱 리랭커 (LLM 없이 빠르게)
 # ====================================================================
 class HeuristicReranker:
     """
-    LLM 없이 빠르게 재랭킹 (피드백 + 태그만 사용)
+    LLM 없이 빠르게 재랭킹 (피드백 + 유사도만 사용)
 
     용도:
     - 빠른 응답이 필요한 경우
@@ -516,12 +525,10 @@ class HeuristicReranker:
 
     def __init__(
         self,
-        w_feedback: float = 0.4,
-        w_tag: float = 0.3,
-        w_similarity: float = 0.3,
+        w_feedback: float = 0.5,
+        w_similarity: float = 0.5,
     ):
         self.w_feedback = w_feedback
-        self.w_tag = w_tag
         self.w_similarity = w_similarity
         log.info("[HEURISTIC-RERANK] Initialized (no LLM)")
 
@@ -529,7 +536,6 @@ class HeuristicReranker:
         self,
         question: str,
         chunks: List[ScoredChunk],
-        query_tags: Optional[List[str]] = None,
         top_k: int = 5,
     ) -> List[ScoredChunk]:
         """휴리스틱 재랭킹 (LLM 호출 없음)"""
@@ -541,12 +547,10 @@ class HeuristicReranker:
         reranked = []
         for chunk in chunks:
             feedback_score = self._calculate_feedback_score(chunk)
-            tag_score = self._calculate_tag_score(chunk, query_tags or [])
             similarity_score = chunk.similarity or 0.0
 
             final_score = (
                 self.w_feedback * feedback_score
-                + self.w_tag * tag_score
                 + self.w_similarity * similarity_score
             )
 
@@ -567,24 +571,3 @@ class HeuristicReranker:
             return 0.5
 
         return fb_pos / total_fb
-
-    def _calculate_tag_score(
-        self, chunk: ScoredChunk, query_tags: List[str]
-    ) -> float:
-        """태그 매칭 점수 (LLMReranker와 동일)"""
-        if not query_tags:
-            return 0.5
-
-        chunk_tags = set(chunk.chunk.tags or [])
-        query_tags_set = set(query_tags)
-
-        if not chunk_tags and not query_tags_set:
-            return 1.0
-
-        intersection = len(chunk_tags & query_tags_set)
-        union = len(chunk_tags | query_tags_set)
-
-        if union == 0:
-            return 0.0
-
-        return intersection / union

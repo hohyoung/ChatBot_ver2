@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import time
@@ -16,7 +15,7 @@ from app.models.schemas import (
     ChatAnswer,
     ChatErrorEvent,
 )
-from app.ingest.tagger import tag_query
+# tag_query 제거 - Query 태깅 비활성화 (방안 3: 순수 벡터 검색)
 
 router = APIRouter()
 logger = logging.getLogger("app.router.chat")
@@ -55,7 +54,6 @@ async def chat_ws(ws: WebSocket):
 
             full_answer = ""
             used_chunks = None
-            used_tags = []  # GAR에서 자동 생성
             image_refs = []  # GAR에서는 orchestrator 레벨에서 image_refs를 전달하지 않음
             first_token_sent = False
 
@@ -96,31 +94,15 @@ async def chat_ws(ws: WebSocket):
                     await ws.send_json(token_event.model_dump(mode="json"))
 
         else:
-            # 기존 RAG 파이프라인
+            # 기존 RAG 파이프라인 (태깅 제거됨 - 방안 3)
 
-            # 1) 태깅 + 검색 병렬 실행 (P1-1 최적화)
-            # 태깅 없이도 검색 가능 → 병렬화로 첫 토큰 지연 개선
+            # 순수 벡터 검색 (태깅 없이)
             t1 = time.perf_counter()
-
-            async def get_tags():
-                return await tag_query(question, max_tags=6)
-
-            async def search_without_tags():
-                # 태그 없이 먼저 검색 시작
-                return await retrieve(question, tags=None)
-
-            # 병렬 실행: 태깅과 검색을 동시에
-            tags_task = asyncio.create_task(get_tags())
-            search_task = asyncio.create_task(search_without_tags())
-
-            # 검색 먼저 완료되면 바로 사용, 태깅 결과는 로깅용
-            candidates = await search_task
-            used_tags = await tags_task
+            candidates = await retrieve(question, tags=None)
 
             t2 = time.perf_counter()
             logger.debug(
-                f"태깅+검색 병렬: {(t2 - t1) * 1000:.0f}ms, "
-                f"tags={used_tags}, 후보={len(candidates)}개"
+                f"검색 완료: {(t2 - t1) * 1000:.0f}ms, 후보={len(candidates)}개"
             )
 
             # 3) 답변 스트리밍 생성 시간 측정
@@ -171,7 +153,6 @@ async def chat_ws(ws: WebSocket):
                 chunks=used_chunks or [],
                 image_refs=image_refs,
                 answer_id=answer_id,
-                used_tags=used_tags,
                 latency_ms=int(total_ms),
             )
         )

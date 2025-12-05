@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from app.services.logging import get_logger
 from app.models.schemas import FeedbackRequest, FeedbackResponse, FeedbackUpdated
-from app.ingest.tagger import tag_query
 import app.services.feedback_store as _fs  # upsert_boost 호출
 
 router = APIRouter()
@@ -14,7 +13,6 @@ log = get_logger(__name__)
 async def submit_feedback(body: FeedbackRequest) -> FeedbackResponse:
     """
     피드백 수집 엔드포인트.
-    - 프런트가 tag_context를 비워보내도 서버가 question(query)에서 태그를 생성하여 저장합니다.
     - 레거시 필드(signal, weight)도 하위호환으로 처리합니다.
     """
     try:
@@ -27,15 +25,9 @@ async def submit_feedback(body: FeedbackRequest) -> FeedbackResponse:
             raise ValueError("vote must be 'up' or 'down'")
         weight = float(body.weight) if body.weight is not None else 1.0
 
-        # 2) 질문 태그 확보 (클라이언트가 비워 보내면 서버 폴백)
+        # 2) 질문 정보 확보
         query = (body.query or "").strip()
-        query_tags = list(body.tag_context or [])
-        if not query_tags and query:
-            try:
-                query_tags = await tag_query(query, max_tags=6)
-            except Exception:
-                # 태그 생성 실패 → 컨텍스트 없이 진행(전역 피드백으로 저장)
-                query_tags = []
+        query_tags = list(body.tag_context or [])  # 클라이언트가 보낸 태그만 사용
 
         # 3) 스토어에 누적 및 factor 재계산
         res = _fs.upsert_boost(

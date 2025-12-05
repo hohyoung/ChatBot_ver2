@@ -26,6 +26,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 24px;
+    min-height: 61px;  /* FAQ 헤더와 동일 높이 보장 */
+    box-sizing: border-box;
     border-bottom: 1px solid #e9ecef;
     background: linear-gradient(to bottom, #ffffff, #f8f9fa);
 }
@@ -127,6 +129,16 @@
     border: 1px solid #e9ecef;
     border-bottom-left-radius: 6px;
     align-self: flex-start;
+}
+
+/* ===== Bot Symbol (답변 상단 심볼) ===== */
+.bot-symbol {
+    margin-bottom: 8px;
+}
+
+.bot-symbol-icon {
+    font-size: 16px;
+    display: inline-block;
 }
 
 .chat-bubble.is-welcome {
@@ -525,25 +537,27 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 12px 20px;
+    min-height: 61px;  /* 채팅 헤더와 동일: 12px + 36px(버튼) + 12px + 1px(border) */
+    box-sizing: border-box;
     border-bottom: 1px solid #e9ecef;
-    background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+    background: linear-gradient(to bottom, #ffffff, #f8f9fa);
 }
 
 .faq-panel-header h3 {
     margin: 0;
-    font-size: 16px;
+    font-size: 14px;  /* 버튼 텍스트와 조화 */
     font-weight: 600;
-    color: #212529;
+    color: #495057;  /* 채팅 헤더 버튼과 동일 */
 }
 
 .faq-panel-close {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    border: none;
-    background: transparent;
-    color: #868e96;
+    border: 1px solid #e9ecef;  /* 채팅 헤더 버튼과 동일 */
+    background: #ffffff;
+    color: #495057;
     cursor: pointer;
     border-radius: 8px;
     display: flex;
@@ -553,8 +567,9 @@
 }
 
 .faq-panel-close:hover {
-    background: #f1f3f4;
-    color: #495057;
+    background: #f1f3f5;
+    border-color: #dee2e6;
+    color: #212529;
 }
 
 .faq-panel-content {

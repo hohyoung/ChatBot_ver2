@@ -337,6 +337,9 @@ export default function ChatPanel({
 
                             return (
                                 <div key={index} className={`chat-bubble bot ${item.isStreaming ? 'streaming' : ''}`}>
+                                    <div className="bot-symbol">
+                                        <span className="bot-symbol-icon">&#x1F539;</span>
+                                    </div>
                                     <MarkdownRenderer
                                         content={item.content}
                                         isStreaming={item.isStreaming}
@@ -360,37 +363,6 @@ export default function ChatPanel({
                                                     </div>
                                                 ))}
                                             </div>
-                                            {/* 이미지가 있는 청크들 표시 */}
-                                            {item.sources.some(src => src.has_image && src.image_url) && (
-                                                <div className="source-images-area">
-                                                    <div className="source-images-label">
-                                                        {item.sources.some(src => src.image_type === 'table') ? '📊' : '🖼️'} 원본 이미지:
-                                                    </div>
-                                                    <div className="source-images-list">
-                                                        {item.sources.filter(src => src.has_image && src.image_url).map((src, idx) => (
-                                                            <div
-                                                                key={`img-${src.chunk_id}-${idx}`}
-                                                                className="source-image-card"
-                                                                onClick={() => setImageModalSrc(src.image_url)}
-                                                            >
-                                                                <img
-                                                                    src={src.image_url}
-                                                                    alt={src.image_type === 'table' ? '표' : '그림'}
-                                                                    className="source-image-thumb"
-                                                                />
-                                                                <div className="source-image-label">
-                                                                    {src.image_type === 'table' ? (
-                                                                        <><FaTable /> 표</>
-                                                                    ) : (
-                                                                        <><FaImage /> 그림</>
-                                                                    )}
-                                                                    {src.page_start && ` (p.${src.page_start})`}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
                                     )}
                                 </div>

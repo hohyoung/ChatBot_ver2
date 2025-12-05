@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import List, Tuple, Any, Dict, Union, AsyncIterator, Optional
 
 from app.services.openai_client import (
@@ -14,6 +15,156 @@ from app.services.logging import get_logger
 from app.models.schemas import Chunk, ScoredChunk  # ← 경로 주의!
 
 log = get_logger("app.rag.generator")
+
+
+def _filter_actually_used_chunks(
+    answer: str,
+    chunks: List[Chunk],
+    min_overlap_ratio: float = 0.15,
+) -> List[Chunk]:
+    """
+    LLM 답변에서 실제로 사용된 청크만 필터링.
+
+    전략:
+    1. 청크의 핵심 키워드/문구가 답변에 등장하는지 확인
+    2. 청크 내용과 답변의 n-gram 오버랩 비율 계산
+    3. 특정 임계값 이상인 청크만 반환
+
+    Args:
+        answer: LLM이 생성한 답변
+        chunks: LLM에 전달된 청크 목록
+        min_overlap_ratio: 최소 오버랩 비율 (기본 0.15 = 15%)
+
+    Returns:
+        실제 답변에 사용된 것으로 판단되는 청크 목록
+    """
+    if not answer or not chunks:
+        return chunks
+
+    # 답변 정규화 (공백, 특수문자 정리)
+    answer_normalized = re.sub(r'\s+', ' ', answer.lower().strip())
+
+    used_chunks = []
+
+    for chunk in chunks:
+        content = chunk.content or ""
+        if not content.strip():
+            continue
+
+        # 청크 내용 정규화
+        content_normalized = re.sub(r'\s+', ' ', content.lower().strip())
+
+        # 1) 핵심 문구 매칭 (3단어 이상 연속 일치)
+        # 청크에서 의미있는 문구 추출 (숫자+단위, 조항명 등)
+        phrases = _extract_key_phrases(content)
+        phrase_match = any(
+            phrase.lower() in answer_normalized
+            for phrase in phrases
+            if len(phrase) >= 4  # 최소 4자 이상
+        )
+
+        # 2) 단어 오버랩 계산
+        chunk_words = set(re.findall(r'[가-힣a-zA-Z0-9]+', content_normalized))
+        answer_words = set(re.findall(r'[가-힣a-zA-Z0-9]+', answer_normalized))
+
+        if chunk_words:
+            overlap = chunk_words & answer_words
+            # 불용어 제외 (조사, 일반 용어)
+            stopwords = {'는', '은', '이', '가', '을', '를', '의', '에', '로', '와', '과',
+                         '및', '등', '것', '수', '때', '경우', '대해', '관련', '해당',
+                         'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'for'}
+            meaningful_overlap = overlap - stopwords
+            meaningful_chunk_words = chunk_words - stopwords
+
+            if meaningful_chunk_words:
+                overlap_ratio = len(meaningful_overlap) / len(meaningful_chunk_words)
+            else:
+                overlap_ratio = 0.0
+        else:
+            overlap_ratio = 0.0
+
+        # 3) 조항/규정 번호 매칭 (예: "제10조", "제3항")
+        regulation_pattern = r'제\s*\d+\s*[조항호]'
+        chunk_regulations = set(re.findall(regulation_pattern, content))
+        answer_regulations = set(re.findall(regulation_pattern, answer))
+        regulation_match = bool(chunk_regulations & answer_regulations)
+
+        # 4) 숫자+단위 매칭 (예: "15일", "80%", "1년")
+        number_pattern = r'\d+(?:\.\d+)?(?:일|개월|년|%|원|시간|분)'
+        chunk_numbers = set(re.findall(number_pattern, content))
+        answer_numbers = set(re.findall(number_pattern, answer))
+        number_match = bool(chunk_numbers & answer_numbers)
+
+        # 종합 판단
+        is_used = (
+            phrase_match or
+            regulation_match or
+            number_match or
+            overlap_ratio >= min_overlap_ratio
+        )
+
+        if is_used:
+            used_chunks.append(chunk)
+            log.debug(
+                f"[FILTER] 사용됨: {chunk.chunk_id} "
+                f"(phrase={phrase_match}, reg={regulation_match}, "
+                f"num={number_match}, overlap={overlap_ratio:.2f})"
+            )
+        else:
+            log.debug(
+                f"[FILTER] 미사용: {chunk.chunk_id} "
+                f"(phrase={phrase_match}, reg={regulation_match}, "
+                f"num={number_match}, overlap={overlap_ratio:.2f})"
+            )
+
+    # 최소 1개는 반환 (fallback)
+    if not used_chunks and chunks:
+        used_chunks = [chunks[0]]
+        log.warning("[FILTER] 사용된 청크 없음, 첫 번째 청크를 fallback으로 사용")
+
+    log.info(f"[FILTER] {len(chunks)}개 청크 → {len(used_chunks)}개 실제 사용")
+
+    return used_chunks
+
+
+def _extract_key_phrases(text: str, min_len: int = 4, max_phrases: int = 20) -> List[str]:
+    """
+    텍스트에서 핵심 문구 추출.
+    - 조항명 (제N조, 제N항)
+    - 숫자+단위 (15일, 80%)
+    - 고유명사/전문용어 (연차휴가, 출장비 등)
+    """
+    phrases = []
+
+    # 1) 조항명
+    regulations = re.findall(r'제\s*\d+\s*[조항호][의\s]*\d*', text)
+    phrases.extend(regulations)
+
+    # 2) 숫자+단위 표현
+    numbers = re.findall(r'\d+(?:\.\d+)?(?:일|개월|년|%|원|시간|분|명|개|회)', text)
+    phrases.extend(numbers)
+
+    # 3) 한글 복합어 (2어절 이상)
+    # 예: "연차휴가", "출장비", "인사위원회"
+    compound_words = re.findall(r'[가-힣]{2,}(?:휴가|규정|위원회|수당|비용|지원|신청|승인|기준)', text)
+    phrases.extend(compound_words)
+
+    # 4) 괄호 안 용어
+    parenthetical = re.findall(r'\(([^)]{2,20})\)', text)
+    phrases.extend(parenthetical)
+
+    # 중복 제거 및 길이 필터
+    unique_phrases = []
+    seen = set()
+    for p in phrases:
+        p_clean = p.strip()
+        if p_clean and len(p_clean) >= min_len and p_clean not in seen:
+            seen.add(p_clean)
+            unique_phrases.append(p_clean)
+            if len(unique_phrases) >= max_phrases:
+                break
+
+    return unique_phrases
 
 
 def _score_of(sc: Union[ScoredChunk, Chunk]) -> float:
@@ -204,6 +355,25 @@ def _get_system_prompt(image_refs: List[Dict[str, str]] = None) -> str:
         "4. **구조화**: 내용이 많을 때는 읽기 쉽게 정리해서 알려드려요.\n"
         "5. **불확실성**: 정보가 부족하면 '문서에서 확인되지 않아요'라고 솔직히 말씀드리고, 담당 부서 문의를 안내해요.\n\n"
 
+        "## 🧠 다단계 추론 (매우 중요!)\n"
+        "질문에 답하기 전에 **단계별로 생각**하세요. 특히 다음 경우에 주의하세요:\n\n"
+        "### 경로/단계 질문\n"
+        "- 'A에서 B가 되려면?', 'A에서 B까지 얼마나?'와 같은 질문은 **중간 단계**가 있는지 확인하세요.\n"
+        "- 예: '대리에서 부장이 되려면?' → 대리→과장→차장→부장 각 단계의 기간을 **모두 합산**해야 해요.\n\n"
+        "### 계산이 필요한 질문\n"
+        "- 여러 값을 더하거나 조건을 조합해야 하는 경우, **계산 과정을 명시**하세요.\n"
+        "- 예: '최소 몇 년?' → '대리→과장 4년 + 과장→부장 4년 = **총 8년**'\n\n"
+        "### 조건 조합 질문\n"
+        "- '~하면서 ~하려면?'처럼 여러 조건이 있으면 **모든 조건을 확인**하세요.\n"
+        "- 문서의 표나 목록에서 관련된 **모든 행/항목**을 검토하세요.\n\n"
+        "### 추론 예시\n"
+        "질문: '사원에서 과장이 되려면 최소 몇 년이 필요한가요?'\n"
+        "추론 과정:\n"
+        "1. 문서에서 승진 단계 확인: 사원 → 대리 → 과장\n"
+        "2. 각 단계별 소요 기간: 사원→대리 3년, 대리→과장 4년\n"
+        "3. 합산: 3년 + 4년 = **7년**\n"
+        "답변: '사원에서 과장이 되려면 최소 **7년**이 필요해요. (사원→대리 3년 + 대리→과장 4년)'\n\n"
+
         "## 마크다운 출력 가이드\n"
         "- **첫 문장**: 핵심 답변을 먼저 친근하게 알려드려요\n"
         "- **목록**: 여러 항목은 `-` 또는 `1.`로 깔끔하게 정리해요\n"
@@ -311,8 +481,9 @@ async def generate_answer(
     )
 
     # 비동기 Chat Completions (동시성 제어 포함)
+    # 답변 생성은 복잡한 추론이 필요하므로 고급 모델 사용
     resp = await call_chat_completion_async(
-        model=settings.openai_model,
+        model=settings.openai_advanced_model,
         messages=[
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
@@ -321,7 +492,10 @@ async def generate_answer(
     )
     answer = resp.choices[0].message.content.strip() if resp.choices else ""
 
-    return answer, used_chunks
+    # 실제 사용된 청크만 필터링
+    actually_used_chunks = _filter_actually_used_chunks(answer, used_chunks)
+
+    return answer, actually_used_chunks
 
 
 async def generate_answer_stream(
@@ -364,8 +538,9 @@ async def generate_answer_stream(
     )
 
     # 비동기 스트리밍 (동시성 제어 + 자동 Semaphore 해제)
+    # 답변 생성은 복잡한 추론이 필요하므로 고급 모델 사용
     stream = await call_chat_completion_stream_async(
-        model=settings.openai_model,
+        model=settings.openai_advanced_model,
         messages=[
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
@@ -375,6 +550,7 @@ async def generate_answer_stream(
 
     # 줄 단위 버퍼링
     line_buffer = ""
+    full_answer = ""  # 전체 답변 수집 (청크 필터링용)
     FLUSH_THRESHOLD = 50  # 줄바꿈 없이 이 길이 초과 시 강제 전송
 
     try:
@@ -382,6 +558,7 @@ async def generate_answer_stream(
             if chunk.choices and chunk.choices[0].delta.content:
                 token = chunk.choices[0].delta.content
                 line_buffer += token
+                full_answer += token  # 전체 답변 수집
 
                 # 줄바꿈이 있으면 완전한 줄들을 전송
                 while '\n' in line_buffer:
@@ -402,6 +579,9 @@ async def generate_answer_stream(
     if line_buffer:
         yield (line_buffer, None, None)
 
+    # 실제 사용된 청크만 필터링
+    actually_used_chunks = _filter_actually_used_chunks(full_answer, used_chunks)
+
     # 스트림 종료 시 청크 리스트와 이미지 참조 반환
     # image_refs를 [IMG1], [IMG2] 형식으로 변환
     formatted_image_refs = []
@@ -414,4 +594,4 @@ async def generate_answer_stream(
             "page": img.get("page"),
         })
 
-    yield ("", used_chunks, formatted_image_refs)
+    yield ("", actually_used_chunks, formatted_image_refs)
