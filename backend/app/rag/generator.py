@@ -1,20 +1,31 @@
+"""LLM 답변 생성 모듈"""
 from __future__ import annotations
 
 import re
-from typing import List, Tuple, Any, Dict, Union, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
+from app.config import settings
+from app.models.schemas import Chunk, ScoredChunk
+from app.services.logging import get_logger
 from app.services.openai_client import (
-    get_client,
-    get_async_client,
     call_chat_completion_async,
     call_chat_completion_stream_async,
-    _get_semaphore,
 )
-from app.config import settings
-from app.services.logging import get_logger
-from app.models.schemas import Chunk, ScoredChunk  # ← 경로 주의!
 
-log = get_logger("app.rag.generator")
+log = get_logger(__name__)
+
+# 상수 정의
+KOREAN_STOPWORDS = frozenset({
+    '는', '은', '이', '가', '을', '를', '의', '에', '로', '와', '과',
+    '및', '등', '것', '수', '때', '경우', '대해', '관련', '해당'
+})
+ENGLISH_STOPWORDS = frozenset({
+    'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'for'
+})
+STOPWORDS = KOREAN_STOPWORDS | ENGLISH_STOPWORDS
+
+# 스트리밍 버퍼 설정
+STREAM_FLUSH_THRESHOLD = 50  # 줄바꿈 없이 이 길이 초과 시 강제 전송
 
 
 def _filter_actually_used_chunks(
@@ -69,12 +80,8 @@ def _filter_actually_used_chunks(
 
         if chunk_words:
             overlap = chunk_words & answer_words
-            # 불용어 제외 (조사, 일반 용어)
-            stopwords = {'는', '은', '이', '가', '을', '를', '의', '에', '로', '와', '과',
-                         '및', '등', '것', '수', '때', '경우', '대해', '관련', '해당',
-                         'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'for'}
-            meaningful_overlap = overlap - stopwords
-            meaningful_chunk_words = chunk_words - stopwords
+            meaningful_overlap = overlap - STOPWORDS
+            meaningful_chunk_words = chunk_words - STOPWORDS
 
             if meaningful_chunk_words:
                 overlap_ratio = len(meaningful_overlap) / len(meaningful_chunk_words)
@@ -581,7 +588,6 @@ async def generate_answer_stream(
     # 줄 단위 버퍼링
     line_buffer = ""
     full_answer = ""  # 전체 답변 수집 (청크 필터링용)
-    FLUSH_THRESHOLD = 50  # 줄바꿈 없이 이 길이 초과 시 강제 전송
 
     try:
         async for chunk in stream:
@@ -596,7 +602,7 @@ async def generate_answer_stream(
                     yield (line + '\n', None, None)
 
                 # 줄바꿈 없이 너무 길어지면 단어 경계에서 전송
-                if len(line_buffer) > FLUSH_THRESHOLD:
+                if len(line_buffer) > STREAM_FLUSH_THRESHOLD:
                     last_space = line_buffer.rfind(' ')
                     if last_space > 0:
                         yield (line_buffer[:last_space + 1], None, None)

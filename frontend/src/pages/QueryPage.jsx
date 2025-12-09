@@ -1,13 +1,18 @@
 // src/pages/QueryPage.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import './QueryPage.css';
-import ChatPanel from '../components/ChatPanel/ChatPanel.jsx';
+
 import { openChatSocket } from '../api/ws.js';
 import { post, SERVER_ERROR_MESSAGE } from '../api/http.js';
 
-// WebSocket 연결 타임아웃 (15초)
-const WS_CONNECT_TIMEOUT_MS = 15000;
+import ChatPanel from '../components/ChatPanel/ChatPanel.jsx';
+
+import './QueryPage.css';
+
+// 질의 중 health 체크 간격 (3초)
+const HEALTH_CHECK_INTERVAL_MS = 3000;
+// 질의 절대 타임아웃 (90초) - 이 시간 초과 시 무조건 실패 처리
+const ABSOLUTE_TIMEOUT_MS = 90000;
 
 export default function QueryPage() {
     const location = useLocation();
@@ -21,7 +26,36 @@ export default function QueryPage() {
     const [lastQ, setLastQ] = useState('');
     const [initialQuestion, setInitialQuestion] = useState(null); // DocsPage에서 전달된 초기 질문
     const wsRef = useRef(null);
-    const timeoutRef = useRef(null); // 타임아웃 타이머
+    const queryHealthCheckRef = useRef(null); // 질의 중 health 체크 타이머
+    const absoluteTimeoutRef = useRef(null); // 절대 타임아웃 타이머
+    const recoveryCheckRef = useRef(null); // 복구 체크 타이머
+
+    // 연결 실패 상태일 때 주기적으로 health 체크하여 복구 감지
+    useEffect(() => {
+        if (connectionFailed && !connecting) {
+            // 실패 상태 + 질의 중 아닐 때만 복구 체크
+            const checkRecovery = async () => {
+                try {
+                    const response = await fetch('/api/health');
+                    if (response.ok) {
+                        setConnectionFailed(false);
+                        setConnectionRecovered(true);
+                    }
+                } catch {
+                    // 아직 연결 안 됨
+                }
+            };
+            checkRecovery();
+            recoveryCheckRef.current = setInterval(checkRecovery, HEALTH_CHECK_INTERVAL_MS);
+        }
+
+        return () => {
+            if (recoveryCheckRef.current) {
+                clearInterval(recoveryCheckRef.current);
+                recoveryCheckRef.current = null;
+            }
+        };
+    }, [connectionFailed, connecting]);
 
     const handleSelectSource = (source) => {
         setSelectedSource(source);
@@ -38,11 +72,15 @@ export default function QueryPage() {
         }
     }, [sources]);
 
-    const cleanupWS = () => {
-        // 타임아웃 클리어
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
+    // 질의 관련 타이머/리소스 정리
+    const cleanupQuery = () => {
+        if (queryHealthCheckRef.current) {
+            clearInterval(queryHealthCheckRef.current);
+            queryHealthCheckRef.current = null;
+        }
+        if (absoluteTimeoutRef.current) {
+            clearTimeout(absoluteTimeoutRef.current);
+            absoluteTimeoutRef.current = null;
         }
         if (wsRef.current) {
             try {
@@ -52,47 +90,61 @@ export default function QueryPage() {
         }
     };
 
+    // 질의 실패 처리
+    const handleQueryFailed = () => {
+        setConnectionFailed(true);
+        setConnecting(false);
+        cleanupQuery();
+    };
+
     const ask = (q) => {
-        cleanupWS();
+        cleanupQuery();
         setAnswer('');
         setSources([]);
         setConnecting(true);
         setLoadingStage(null);
-        const wasConnectionFailed = connectionFailed; // 이전에 실패 상태였는지 기록
+        const wasConnectionFailed = connectionFailed;
         setConnectionFailed(false);
         setConnectionRecovered(false);
         setLastQ(q);
 
-        let receivedAnyMessage = false; // 메시지 수신 여부 추적
-        let receivedFinalEvent = false; // final 이벤트 수신 여부 추적
+        let isCompleted = false; // 질의 완료 여부
 
-        // 타임아웃 설정: 15초 내에 메시지를 받지 못하면 연결 실패로 처리
-        timeoutRef.current = setTimeout(() => {
-            if (!receivedAnyMessage && connecting) {
-                console.error('WebSocket connection timeout');
-                setConnectionFailed(true);
-                setConnecting(false);
-                cleanupWS();
+        // 질의 완료 처리 함수
+        const completeQuery = () => {
+            isCompleted = true;
+            cleanupQuery();
+        };
+
+        // 1) 절대 타임아웃: 90초 후 무조건 실패
+        absoluteTimeoutRef.current = setTimeout(() => {
+            if (!isCompleted) {
+                handleQueryFailed();
             }
-        }, WS_CONNECT_TIMEOUT_MS);
+        }, ABSOLUTE_TIMEOUT_MS);
+
+        // 2) 질의 중 health 체크: 3초마다 서버 상태 확인
+        queryHealthCheckRef.current = setInterval(async () => {
+            if (isCompleted) return;
+            try {
+                const response = await fetch('/api/health');
+                if (!response.ok) {
+                    handleQueryFailed();
+                }
+            } catch {
+                // health 체크 실패 = 서버 다운
+                handleQueryFailed();
+            }
+        }, HEALTH_CHECK_INTERVAL_MS);
 
         wsRef.current = openChatSocket(q, {
             onMessage: (msg) => {
-                // 첫 메시지 수신 시 처리
-                if (!receivedAnyMessage) {
-                    receivedAnyMessage = true;
-                    // 타임아웃 클리어
-                    if (timeoutRef.current) {
-                        clearTimeout(timeoutRef.current);
-                        timeoutRef.current = null;
-                    }
-                    // 이전에 연결 실패 상태였다면 복구 알림
-                    if (wasConnectionFailed) {
-                        setConnectionRecovered(true);
-                    }
+                // 이전 연결 실패 상태였다면 복구 알림
+                if (wasConnectionFailed) {
+                    setConnectionRecovered(true);
                 }
 
-                // 진행 단계 이벤트: GAR 파이프라인 단계
+                // 진행 단계 이벤트
                 if (msg?.type === 'stage') {
                     setLoadingStage({
                         stage: msg.stage,
@@ -100,69 +152,56 @@ export default function QueryPage() {
                     });
                     return;
                 }
-                // 토큰 이벤트: 스트리밍 중
+                // 토큰 이벤트
                 if (msg?.type === 'token' && msg.token) {
                     setLoadingStage(null);
                     setAnswer((prev) => prev + msg.token);
                     return;
                 }
-                // 최종 이벤트: 스트리밍 완료
+                // 최종 이벤트
                 if (msg?.type === 'final' && msg.data) {
-                    receivedFinalEvent = true;
                     setLoadingStage(null);
                     setAnswer(msg.data.answer ?? '');
                     setSources(msg.data.chunks ?? msg.data.sources ?? []);
                     setConnecting(false);
-                    cleanupWS();
+                    completeQuery();
                     return;
                 }
                 // 에러 이벤트
                 if (msg?.type === 'error') {
-                    console.error('Chat error:', msg.error);
                     setLoadingStage(null);
                     setAnswer('오류가 발생했습니다: ' + (msg.error || '알 수 없는 오류'));
                     setConnecting(false);
-                    cleanupWS();
+                    completeQuery();
                     return;
                 }
-                // 레거시 형식 지원 (하위 호환)
+                // 레거시 형식
                 if (msg?.answer !== undefined) {
                     setAnswer(msg.answer || '');
                     setSources(msg.sources || []);
                     setConnecting(false);
-                    cleanupWS();
+                    completeQuery();
                 }
             },
-            onClose: ({ wasClean, code } = {}) => {
-                // 정상 종료가 아니거나 final 이벤트 없이 끊긴 경우
-                if (!receivedAnyMessage) {
-                    // 메시지를 한 번도 받지 못한 채 연결이 끊긴 경우 = 초기 연결 실패
-                    setConnectionFailed(true);
-                } else if (!receivedFinalEvent && !wasClean) {
-                    // 스트리밍 도중 연결이 비정상적으로 끊긴 경우
-                    setAnswer((prev) => prev + '\n\n⚠️ 서버와의 연결이 끊어졌습니다. 다시 시도해 주세요.');
+            onClose: ({ wasClean } = {}) => {
+                if (!isCompleted) {
+                    // 완료되지 않은 상태에서 연결 끊김 = 실패
+                    handleQueryFailed();
                 }
-                setConnecting(false);
-                cleanupWS();
             },
-            onError: (err) => {
-                console.error('WebSocket error:', err);
-                // 에러 발생 시 연결 실패로 처리
-                if (!receivedFinalEvent) {
-                    setConnectionFailed(true);
+            onError: () => {
+                if (!isCompleted) {
+                    handleQueryFailed();
                 }
-                setConnecting(false);
-                cleanupWS();
             },
         });
     };
 
     const vote = async (chunk_id, vote, query) => {
         try {
-            // ★ 피드백 API 호출 시 query를 함께 전송
             await post('/api/feedback', { chunk_id, vote, tag_context: [], query });
-        } catch (e) {
-            console.error('Feedback submission failed:', e);
+        } catch {
+            // 피드백 실패는 사용자 경험에 영향 없음
         }
     };
 

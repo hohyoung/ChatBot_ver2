@@ -1,33 +1,16 @@
 // src/pages/AdminSettingsPage.jsx
 // 관리자 설정 페이지 (문서 관리 / 유저 관리)
-// - 시각/표시: 공통 유틸(fmtDate)
 // - 문서 관리: 문서명/업로더 필터, 업로드 날짜(폴백 포함), 청크 확인, 삭제
 // - 유저 관리: 다중 필터, 인라인 편집(아이디/이름/이메일/보안등급/비밀번호), 삭제
 
 import React, { useEffect, useMemo, useState } from "react";
-import "./AdminSettingsPage.css";
-import { adminApi } from "../api/http"; // 백엔드 관리자 API
-import MarkdownRenderer from "../components/MarkdownRenderer"; // 마크다운 렌더링
 
-/* =========================================================
-   공통: 날짜 포맷터
-   - 문자열/Date 모두 입력 가능
-   - 파싱 실패 시 "-" 반환
-   ========================================================= */
-const fmtDate = (v) => {
-    if (!v) return "-";
-    try {
-        const d = new Date(v);
-        if (Number.isNaN(d.getTime())) return "-";
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const hh = String(d.getHours()).padStart(2, "0");
-        const mi = String(d.getMinutes()).padStart(2, "0");
-        return `${d.getFullYear()}-${mm}-${dd} ${hh}:${mi}`;
-    } catch {
-        return "-";
-    }
-};
+import { adminApi } from "../api/http";
+import { fmtDate } from "../utils/dateFormat";
+
+import MarkdownRenderer from "../components/MarkdownRenderer";
+
+import "./AdminSettingsPage.css";
 
 /* =========================================================
    공통: 상단 모드 스위처 (문서 관리 / 유저 관리)

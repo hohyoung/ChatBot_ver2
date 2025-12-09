@@ -1,18 +1,18 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings, validate_on_startup
-from app.services.logging import setup_logging
-from app.services.scheduler import start_scheduler, stop_scheduler
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-# ⬇️ 라우터 "모듈"이 아니라 "router 객체"를 직접 임포트
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.config import settings, validate_on_startup
+from app.router.admin import router as admin_router
+from app.router.auth import router as auth_router
 from app.router.chat import router as chat_router
 from app.router.docs import router as docs_router
-from app.router.feedback import router as feedback_router
-from app.router.auth import router as auth_router  # /api/auth/*
-from app.router.admin import router as admin_router
 from app.router.faq import router as faq_router
+from app.router.feedback import router as feedback_router
+from app.services.logging import setup_logging
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 
 setup_logging()
@@ -64,18 +64,13 @@ def root():
     return {"ok": True, "service": "chatBot_ver2"}
 
 
-# 정적 문서 서빙(원본 파일 공개 경로)
+# 정적 파일 서빙
 PUBLIC_DOCS_DIR = Path("storage/docs/public")
 PUBLIC_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-
-# /static/docs/<파일명> 으로 접근 가능
 app.mount("/static/docs", StaticFiles(directory=str(PUBLIC_DOCS_DIR)), name="docs")
 
-# 정적 이미지 서빙 (표/그림 원본 이미지)
 IMAGES_DIR = Path("storage/images")
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-
-# /static/images/<파일명> 으로 접근 가능
 app.mount("/static/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
 
 # 라우터 등록

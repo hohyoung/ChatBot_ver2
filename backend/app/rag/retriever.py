@@ -1,15 +1,22 @@
-# backend/app/rag/retriever.py
+"""검색 및 리랭킹 모듈"""
 from __future__ import annotations
+
 import asyncio
-import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from app.services.embedding import embed_query, embed_query_async
-from app.vectorstore.store import query_by_embedding
 from app.models.schemas import ChunkOut, ScoredChunk
+from app.services.embedding import embed_query, embed_query_async
 from app.services.feedback_store import get_boost_map
+from app.services.logging import get_logger
+from app.vectorstore.store import query_by_embedding
 
-logger = logging.getLogger("app.rag.retriever")
+# 상수 정의
+COSINE_DISTANCE_MAX = 2.0  # ChromaDB 코사인 거리 최대값 (0~2 범위)
+FEEDBACK_BASE_FACTOR = 0.5  # 피드백 가중치 기본값 (0.5~1.5 범위)
+RETRIEVAL_CANDIDATES_MULTIPLIER = 2  # 검색 후보 배수 (k * 2)
+DEFAULT_MIN_CANDIDATES = 10  # 최소 검색 후보 수
+
+logger = get_logger(__name__)
 
 
 def _similarity_from_distance(d: float) -> float:
@@ -27,8 +34,7 @@ def _similarity_from_distance(d: float) -> float:
     - distance=2 → similarity=0.0 (반대)
     """
     try:
-        # cosine distance (0~2) → similarity (0~1)
-        sim = 1.0 - (float(d) / 2.0)
+        sim = 1.0 - (float(d) / COSINE_DISTANCE_MAX)
     except Exception:
         sim = 0.0
     return max(0.0, min(1.0, sim))
@@ -42,15 +48,11 @@ def _feedback_factor(meta: Dict[str, Any]) -> float:
     pos = int(meta.get("fb_pos", 0) or 0)
     neg = int(meta.get("fb_neg", 0) or 0)
     p = (pos + 1.0) / (pos + neg + 2.0)
-    return 0.5 + p  # 0.5~1.5
-
-
-# _tag_boost 함수 제거 (방안 3: Query 태깅 비활성화)
-# 한글 질문 ↔ 영어 태그 불일치로 인해 실질적 효과 없음
-# 순수 벡터 검색 + 피드백 기반 스코어링만 사용
+    return FEEDBACK_BASE_FACTOR + p
 
 
 def _to_chunk_out(chunk_id: str, content: str, meta: Dict[str, Any]) -> ChunkOut:
+    """ChromaDB 메타데이터를 ChunkOut 객체로 변환"""
 
     logger.debug("[RETRIEVE] meta keys=%s", list(meta.keys()))
     logger.debug(
@@ -145,9 +147,9 @@ async def retrieve(
     # 2) Chroma 질의
     raw = query_by_embedding(
         q_vec,
-        n_results=max(k * 2, 10),
+        n_results=max(k * RETRIEVAL_CANDIDATES_MULTIPLIER, DEFAULT_MIN_CANDIDATES),
         where={"visibility": {"$in": ["org", "public"]}},
-    )  # :contentReference[oaicite:3]{index=3}
+    )
 
     docs_rows = raw.get("documents", []) or []
     metas_rows = raw.get("metadatas", []) or []
@@ -159,17 +161,13 @@ async def retrieve(
     metas = metas_rows[0] if len(metas_rows) > 0 else []
     dists = dists_rows[0] if len(dists_rows) > 0 else []
 
-    # [NEW] 2.5) 후보 chunk_id들을 모아서 파일 기반 부스트 맵을 한 번에 조회
+    # 후보 chunk_id들의 부스트 맵 조회
     chunk_ids: List[str] = []
     for i, meta in enumerate(metas):
         m = meta or {}
-        cid = (
-            m.get("chunk_id") or f"chunk_{i:04d}"
-        )  # ids 미포함 환경 폴백 :contentReference[oaicite:4]{index=4}
+        cid = m.get("chunk_id") or f"chunk_{i:04d}"
         chunk_ids.append(cid)
-    boost_map = get_boost_map(
-        chunk_ids, query_tags=tags
-    )  # 파일 기반 factor 조회 :contentReference[oaicite:5]{index=5}
+    boost_map = get_boost_map(chunk_ids, query_tags=tags)
 
     # 3) 재랭크
     candidates: List[tuple[ScoredChunk, float]] = []
@@ -177,21 +175,13 @@ async def retrieve(
         meta = meta or {}
         cid = meta.get("chunk_id") or f"chunk_{i:04d}"
 
-        sim = _similarity_from_distance(
-            dist
-        )  # 0~1 유사도
-        ff_meta = _feedback_factor(
-            meta
-        )  # 메타 기반 폴백 계산
-        ff = float(boost_map.get(cid, ff_meta))  # 파일기반 factor 우선 적용
-        # tag_boost 제거 (방안 3: Query 태깅 비활성화)
+        sim = _similarity_from_distance(dist)
+        ff_meta = _feedback_factor(meta)
+        ff = float(boost_map.get(cid, ff_meta))
         final = sim * ff
 
         chunk = _to_chunk_out(chunk_id=cid, content=doc, meta=meta)
-        #chunk.focus_sentence = _pick_focus_sentence(question, chunk.content)
-        candidates.append(
-            (ScoredChunk(chunk=chunk, score=final), final)
-        )  # ScoredChunk는 score→final_score 자동 승격 :contentReference[oaicite:9]{index=9}
+        candidates.append((ScoredChunk(chunk=chunk, score=final), final))
 
         logger.debug(
             "[retrieve] cid=%s score=%.3f doc=%s",
@@ -202,11 +192,6 @@ async def retrieve(
 
     candidates.sort(key=lambda x: x[1], reverse=True)
     return [sc for sc, _ in candidates[:k]]
-
-
-# ====================================================================
-# Phase 2: Multi-Query Retrieval (GAR 파이프라인)
-# ====================================================================
 
 
 async def retrieve_multi_query(
@@ -298,10 +283,8 @@ async def retrieve_multi_query(
             meta = meta or {}
             cid = meta.get("chunk_id") or f"chunk_{j:04d}"
 
-            # 스코어 계산 (기존 retrieve() 로직 재사용)
             sim = _similarity_from_distance(dist)
             ff = _feedback_factor(meta)
-            # tag_boost 제거 (방안 3: Query 태깅 비활성화)
             base_score = sim * ff
 
             # 쿼리 가중치 적용

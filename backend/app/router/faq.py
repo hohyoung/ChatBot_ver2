@@ -2,14 +2,14 @@
 """
 FAQ API 엔드포인트
 """
-import logging
 from typing import List
 from fastapi import APIRouter, Query
 
 from app.services.faq import get_faq
+from app.services.logging import get_logger
 
 router = APIRouter()
-logger = logging.getLogger("app.router.faq")
+logger = get_logger(__name__)
 
 
 @router.get("/")

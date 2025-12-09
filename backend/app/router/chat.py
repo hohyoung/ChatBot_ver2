@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -9,16 +8,16 @@ from app.rag.retriever import retrieve
 from app.rag.generator import generate_answer_stream
 from app.services.idgen import new_id
 from app.services.faq import log_question
+from app.services.logging import get_logger
 from app.models.schemas import (
     ChatTokenEvent,
     ChatFinalEvent,
     ChatAnswer,
     ChatErrorEvent,
 )
-# tag_query 제거 - Query 태깅 비활성화 (방안 3: 순수 벡터 검색)
 
 router = APIRouter()
-logger = logging.getLogger("app.router.chat")
+logger = get_logger(__name__)
 
 # ====================================================================
 # Feature Flags: GAR Phase 2/3 활성화 여부

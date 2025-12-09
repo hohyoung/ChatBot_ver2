@@ -33,7 +33,6 @@ const FAQList = ({ onQuestionClick, isInPanel = false }) => {
       const data = await response.json();
       setFaqList(data);
     } catch (err) {
-      console.error('FAQ 로드 에러:', err);
       setError(err.message);
     } finally {
       setLoading(false);

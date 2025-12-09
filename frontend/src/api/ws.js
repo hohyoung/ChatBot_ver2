@@ -46,7 +46,6 @@ export function openChatSocket(question, { onMessage, onClose, onError } = {}) {
                 typeof question === "string" ? question : String(question ?? "");
             ws.send(payload);
         } catch (err) {
-            console.error("WS send error", err);
             onError && onError(err);
         }
     };
@@ -55,8 +54,8 @@ export function openChatSocket(question, { onMessage, onClose, onError } = {}) {
         try {
             const msg = JSON.parse(e.data);
             onMessage && onMessage(msg);
-        } catch (err) {
-            console.error("WS parse error", err);
+        } catch {
+            // JSON 파싱 실패 시 무시
         }
     };
 
@@ -66,7 +65,6 @@ export function openChatSocket(question, { onMessage, onClose, onError } = {}) {
     };
 
     ws.onerror = (e) => {
-        console.error("WS error", e);
         onError && onError(e);
     };
 

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import "./SettingPage.css";
+import { FaLock } from "react-icons/fa";
+
 import { docsApi } from "../api/http";
 import { me as fetchMe } from "../store/auth";
-import { FaLock } from "react-icons/fa";
 
 import ProfileSection from "../components/Settings/ProfileSection.jsx";
 import MyDocsSection from "../components/Settings/MyDocsSection.jsx";
+
+import "./SettingsPage.css";
 
 /** 상단 카드 스위처 */
 function SettingsSwitcher({ value, onChange }) {

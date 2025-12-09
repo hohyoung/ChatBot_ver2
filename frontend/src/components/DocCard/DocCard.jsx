@@ -1,5 +1,6 @@
 import React from 'react';
 import './DocCard.css';
+import { formatDateKorean } from '../../utils/dateFormat';
 
 /**
  * DocCard - 문서 카드 컴포넌트
@@ -30,16 +31,6 @@ export default function DocCard({ doc, onAskAboutDoc }) {
     }
   };
 
-  const formatDate = (isoString) => {
-    if (!isoString) return '';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString('ko-KR');
-    } catch {
-      return '';
-    }
-  };
-
   return (
     <div className="doc-card">
       <div className="doc-card-header">
@@ -62,7 +53,7 @@ export default function DocCard({ doc, onAskAboutDoc }) {
           <span className="doc-card-owner">업로더: {doc.owner_username}</span>
         )}
         {doc.uploaded_at && (
-          <span className="doc-card-date">{formatDate(doc.uploaded_at)}</span>
+          <span className="doc-card-date">{formatDateKorean(doc.uploaded_at)}</span>
         )}
       </div>
 

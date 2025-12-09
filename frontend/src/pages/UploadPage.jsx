@@ -1,7 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import "./UploadPage.css";
-import { get, docsApi } from "../api/http.js";
-import { me as fetchMe } from "../store/auth.js";
 import {
     FaFileUpload,
     FaCheckCircle,
@@ -12,6 +9,15 @@ import {
     FaLock,
     FaInfoCircle
 } from "react-icons/fa";
+
+import { get, docsApi } from "../api/http.js";
+import { me as fetchMe } from "../store/auth.js";
+
+import "./UploadPage.css";
+
+// 상수 정의
+const STATUS_POLL_INTERVAL_MS = 1500; // 상태 폴링 간격
+const MAX_UPLOAD_SECURITY_LEVEL = 3;  // 업로드 허용 최대 보안등급
 
 /* 상태 표시 */
 const StatusDisplay = ({ status, job, isSubmitting }) => {
@@ -126,7 +132,7 @@ export default function UploadPage() {
 
     const isLoggedIn = !!user;
     // ✅ 업로드 허용 등급: 1~3 허용, 4(차단)는 불가
-    const canUploadByLevel = isLoggedIn && Number(user?.security_level) <= 3;
+    const canUploadByLevel = isLoggedIn && Number(user?.security_level) <= MAX_UPLOAD_SECURITY_LEVEL;
     const isUploading = isSubmitting || status?.status === "running" || status?.status === "pending" || (job && !status);
     const disabled = !canUploadByLevel || isUploading; // 비로그인 or 4등급 or 업로딩 중
 
@@ -137,16 +143,12 @@ export default function UploadPage() {
             const jobs = result?.jobs || [];
 
             if (jobs.length > 0) {
-                // 가장 최근 진행 중인 job을 복원
                 const activeJob = jobs[0];
-                console.log("[UploadPage] Restoring active job:", activeJob);
-
                 setJob({ job_id: activeJob.job_id, accepted: activeJob.total });
-                // 폴링 시작
                 pollStatus(activeJob.job_id);
             }
-        } catch (err) {
-            console.error("[UploadPage] Failed to restore active jobs:", err);
+        } catch {
+            // 복원 실패는 무시 (새로 업로드하면 됨)
         }
     }, []);
 
@@ -196,33 +198,30 @@ export default function UploadPage() {
             setStatus(initialStat);
             if (initialStat.status === "succeeded" || initialStat.status === "failed") {
                 setFiles([]);
-                setJob(null); // ✅ 완료 시 job도 초기화
-                console.log("[UploadPage] Job already completed, no polling needed");
-                return; // 이미 완료됨, 폴링 불필요
+                setJob(null);
+                return;
             }
-        } catch (e) {
-            console.error("Initial status fetch failed:", e);
+        } catch {
+            // 초기 상태 조회 실패는 무시
         }
 
         // 이후 주기적 폴링
-        console.log("[UploadPage] Starting polling for job:", job_id);
         timerRef.current = setInterval(async () => {
             try {
                 const stat = await get(`/docs/${encodeURIComponent(job_id)}/status`);
                 setStatus(stat);
                 if (stat.status === "succeeded" || stat.status === "failed") {
-                    console.log("[UploadPage] Job completed, stopping polling:", stat.status);
                     clearInterval(timerRef.current);
                     timerRef.current = null;
-                    setFiles([]); // 완료 후 비우기
-                    setJob(null); // ✅ 완료 시 job도 초기화
+                    setFiles([]);
+                    setJob(null);
                 }
             } catch {
                 setErrorMsg("상태를 가져오는 데 실패했습니다.");
                 clearInterval(timerRef.current);
                 timerRef.current = null;
             }
-        }, 1500);
+        }, STATUS_POLL_INTERVAL_MS);
     };
 
     const upload = async () => {
@@ -246,7 +245,6 @@ export default function UploadPage() {
             setJob(result);
             if (result?.job_id) pollStatus(result.job_id);
         } catch (err) {
-            console.error("Upload failed:", err);
             // 💡 413 에러 코드를 확인하는 로직 추가
             if (err.status === 413) {
                 setErrorMsg("업로드 용량이 너무 큽니다. 한 번에 100MB 이하로 업로드해주세요.");

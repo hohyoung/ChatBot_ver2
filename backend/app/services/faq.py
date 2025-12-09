@@ -9,7 +9,6 @@ Note: CPU-bound 작업(임베딩, 클러스터링)은 run_in_executor로
       백그라운드 스레드에서 실행하여 서버 블로킹을 방지합니다.
 """
 import json
-import logging
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -23,6 +22,7 @@ from sklearn.cluster import DBSCAN
 
 from app.services.embedding import embed_texts
 from app.services.redis_client import get_redis_client, is_redis_available
+from app.services.logging import get_logger
 from app.db.database import SessionLocal
 from app.db.models import QueryLog
 from app.config import settings
@@ -30,7 +30,7 @@ from app.config import settings
 # FAQ 생성 전용 스레드 풀 (최대 2개 스레드)
 _faq_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="faq_worker")
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Redis 캐시 키
 FAQ_CACHE_KEY = "faq:list"

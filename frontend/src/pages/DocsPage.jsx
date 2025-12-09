@@ -1,26 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { FaLock } from 'react-icons/fa';
+
 import { docsApi } from '../api/http';
 import { me as fetchMe } from '../store/auth';
-import { FaLock } from 'react-icons/fa';
+import { fmtDate } from '../utils/dateFormat';
+
 import LoadingSpinner, { CardLoader } from '../components/LoadingSpinner/LoadingSpinner';
+
 import './DocsPage.css';
 
-// 날짜 포맷터
-const fmtDate = (v) => {
-  if (!v) return '-';
-  try {
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return '-';
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mi = String(d.getMinutes()).padStart(2, '0');
-    return `${d.getFullYear()}-${mm}-${dd} ${hh}:${mi}`;
-  } catch {
-    return '-';
-  }
-};
+// 상수 정의
+const DOCS_LOAD_LIMIT = 200; // 문서 목록 로드 최대 개수
 
 export default function DocsPage() {
   const navigate = useNavigate();
@@ -51,11 +42,10 @@ export default function DocsPage() {
     setError('');
     try {
       const response = await docsApi.search({
-        limit: 200, // 전체 로드
+        limit: DOCS_LOAD_LIMIT,
       });
       setDocs(response.items || []);
     } catch (err) {
-      console.error('문서 로드 실패:', err);
       setError(err.message || '문서를 불러올 수 없습니다.');
     } finally {
       setLoading(false);
@@ -140,8 +130,6 @@ export default function DocsPage() {
       // LLM API 호출하여 적합한 문서 선택
       const result = await docsApi.librarian(librarianQuery);
 
-      console.log('챗봇 사서 결과:', result);
-
       if (result.selected_doc_ids && result.selected_doc_ids.length > 0) {
         // 선택된 문서 ID 저장
         setSelectedDocIds(result.selected_doc_ids);
@@ -163,7 +151,6 @@ export default function DocsPage() {
         });
       }
     } catch (err) {
-      console.error('챗봇 사서 실패:', err);
       setLibrarianResponse({
         success: false,
         explanation: '검색 실패: ' + (err.message || '알 수 없는 오류'),

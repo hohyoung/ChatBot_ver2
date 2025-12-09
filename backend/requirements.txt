@@ -1,23 +1,35 @@
+# Web Framework
 fastapi
 uvicorn[standard]
 python-multipart
 pydantic
 python-dotenv
+
+# Database
+sqlalchemy>=2.0
+pyodbc
 chromadb
+
+# OpenAI
 openai>=1.40.0
+
+# Auth & Security
 python-jose[cryptography]
-passlib[bcrypt]
+passlib[bcrypt]>=1.7
+email-validator>=2.1
+
+# Document Parsing
 pypdf
 pdfplumber>=0.10.0
 pymupdf>=1.23.0
 Pillow>=10.0.0
 python-docx
 beautifulsoup4
-sqlalchemy>=2.0
-passlib[bcrypt]>=1.7
-email-validator>=2.1
-pyodbc
-boto3>=1.34.0
+
+# ML & Data Processing
+numpy>=1.24.0
 scikit-learn>=1.3.0
+
+# Caching & Scheduling
 redis>=5.0.0
 apscheduler>=3.10.0

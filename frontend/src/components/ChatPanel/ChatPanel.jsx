@@ -1,7 +1,7 @@
 import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import './ChatPanel.css';
-import { FaPaperPlane, FaThumbsUp, FaThumbsDown, FaQuestionCircle, FaTimes, FaPlus, FaImage, FaTable, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
+import { FaPaperPlane, FaThumbsUp, FaThumbsDown, FaQuestionCircle, FaTimes, FaPlus, FaImage, FaTable, FaExclamationTriangle } from 'react-icons/fa';
 import MarkdownRenderer from '../MarkdownRenderer';
 import FAQList from '../FAQ/FAQList';
 import PDFModal from '../PDFModal/PDFModal';
@@ -157,22 +157,12 @@ export default function ChatPanel({
         }
     }, [connectionFailed]);
 
-    // 연결 복구 처리: 이전 실패 메시지를 복구 메시지로 교체
+    // 연결 복구 처리: 이전 실패 메시지를 히스토리에서 제거
     useEffect(() => {
         if (connectionRecovered) {
             setHistory(prev => {
-                const newHistory = [...prev];
-                // 실패 상태인 메시지를 찾아서 복구 상태로 변경
-                for (let i = newHistory.length - 1; i >= 0; i--) {
-                    if (newHistory[i].type === 'bot' && newHistory[i].connectionFailed) {
-                        newHistory[i] = {
-                            type: 'bot',
-                            connectionRecovered: true  // 연결 복구 표시
-                        };
-                        break; // 가장 최근 실패 메시지만 변경
-                    }
-                }
-                return newHistory;
+                // 실패 상태인 메시지를 히스토리에서 제거
+                return prev.filter(item => !(item.type === 'bot' && item.connectionFailed));
             });
         }
     }, [connectionRecovered]);
@@ -274,20 +264,6 @@ export default function ChatPanel({
                             return <div key={index} className="chat-bubble user">{item.content}</div>;
                         }
                         if (item.type === 'bot') {
-                            // 연결 복구 상태 표시
-                            if (item.connectionRecovered) {
-                                return (
-                                    <div key={index} className="loading-stage connection-recovered">
-                                        <div className="stage-icon success-icon">
-                                            <FaCheckCircle />
-                                        </div>
-                                        <div className="connection-recovered-content">
-                                            <p className="stage-message success-title">서버와 연결되었습니다</p>
-                                            <p className="success-detail">연결이 복구되어 정상적으로 서비스를 이용하실 수 있습니다.</p>
-                                        </div>
-                                    </div>
-                                );
-                            }
                             // 연결 실패 상태 표시
                             if (item.connectionFailed) {
                                 return (

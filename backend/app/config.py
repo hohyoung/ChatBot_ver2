@@ -16,6 +16,13 @@ def _getenv(name: str, default: str | None = None) -> str | None:
     return os.getenv(name, default)
 
 
+def _parse_bool(value: str | None, default: bool = False) -> bool:
+    """환경변수 문자열을 부울로 파싱"""
+    if not value:
+        return default
+    return value.lower() in ("1", "true", "yes")
+
+
 def _norm_openai_base(url: str | None) -> str | None:
     if not url:
         return None
@@ -30,11 +37,7 @@ def _norm_openai_base(url: str | None) -> str | None:
 class Settings:
     # App
     app_env: str = _getenv("APP_ENV", "dev") or "dev"
-    strict_env: bool = (_getenv("STRICT_ENV", "false") or "false").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    strict_env: bool = _parse_bool(_getenv("STRICT_ENV"), default=False)
 
     openai_api_key: str = _getenv("OPENAI_API_KEY", "")
 
@@ -95,9 +98,7 @@ class Settings:
         or "http://localhost:5173"
     )
 
-    require_auth_upload: bool = (
-        _getenv("REQUIRE_AUTH_UPLOAD", "false") or "false"
-    ).lower() in ("1", "true", "yes")
+    require_auth_upload: bool = _parse_bool(_getenv("REQUIRE_AUTH_UPLOAD"), default=False)
 
 
 settings = Settings()

@@ -4,14 +4,13 @@
 
 FAQ 자동 갱신 등의 정기 작업을 처리합니다.
 """
-import logging
-import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.services.faq import get_faq
+from app.services.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 스케줄러 인스턴스
 _scheduler: AsyncIOScheduler = None

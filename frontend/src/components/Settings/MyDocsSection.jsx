@@ -1,22 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./Settings.css";
-
-
-/** 날짜 포맷 (YYYY-MM-DD HH:mm) */
-const fmtDate = (v) => {
-    if (!v) return "-";
-    try {
-        const d = new Date(v);
-        if (Number.isNaN(d.getTime())) return "-";
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const hh = String(d.getHours()).padStart(2, "0");
-        const mi = String(d.getMinutes()).padStart(2, "0");
-        return `${d.getFullYear()}-${mm}-${dd} ${hh}:${mi}`;
-    } catch {
-        return "-";
-    }
-};
+import { fmtDate } from "../../utils/dateFormat";
 
 /** 메타에서 대표 업로드 시각을 Date로 반환 (없으면 null) */
 const getItemDate = (it) => {

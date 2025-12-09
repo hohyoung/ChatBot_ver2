@@ -9,12 +9,14 @@ Features:
 - 동시 연결 제한: max_connections=20 (다중 사용자 대응)
 - 자동 재연결: health_check_interval=30
 """
-import logging
-from typing import Optional
-import redis
 import os
+from typing import Optional
 
-logger = logging.getLogger(__name__)
+import redis
+
+from app.services.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Redis 연결 설정
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

@@ -1,50 +1,56 @@
 from __future__ import annotations
+
 import asyncio
 import re
+from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote, unquote, urlparse
+
 from fastapi import (
     APIRouter,
-    Path as PathParam,
-    UploadFile,
+    Depends,
     File,
     Form,
-    Depends,
     HTTPException,
-    status,
-    Request,
+    Path as PathParam,
     Query,
+    Request,
+    UploadFile,
+    status,
 )
 from pypdf import PdfReader
-from app.services.idgen import new_id
-from app.services.storage import save_batch, delete_files_by_relpaths, delete_chunk_images_by_doc_id, DOCS_DIR
+
+from app.ingest.jobs import job_store
+from app.ingest.pipeline import process_job
 from app.models.schemas import (
-    UploadDocsResponse,
-    IngestJobStatus,
     AuthUser,
     DocSearchResponse,
     DocSearchResult,
     DocStatsResponse,
+    IngestJobStatus,
     LibrarianRequest,
     LibrarianResponse,
+    UploadDocsResponse,
 )
-from app.ingest.jobs import job_store
-from app.ingest.pipeline import process_job
-from app.services.logging import get_logger
 from app.router.auth import current_user
-from app.services.security import has_upload_permission
-from urllib.parse import unquote, quote, urlparse
-from pathlib import Path, Path as PPath
-
-# ✅ 벡터스토어/피드백 유틸 임포트 (내 문서 기능)
-from app.vectorstore.store import (
-    list_docs_by_owner,
-    delete_doc_for_owner,
-    search_docs,
-    get_doc_stats,
-)
 from app.services.feedback_store import delete_many as feedback_delete_many
+from app.services.idgen import new_id
+from app.services.logging import get_logger
+from app.services.security import has_upload_permission
+from app.services.storage import (
+    DOCS_DIR,
+    delete_chunk_images_by_doc_id,
+    delete_files_by_relpaths,
+    save_batch,
+)
+from app.vectorstore.store import (
+    delete_doc_for_owner,
+    get_doc_stats,
+    list_docs_by_owner,
+    search_docs,
+)
 
-log = get_logger("app.router.docs")
+log = get_logger(__name__)
 router = APIRouter()
 
 
@@ -154,7 +160,7 @@ async def delete_my_doc(doc_id: str, user: AuthUser = Depends(current_user)):
             # /static/docs/<name> → public/<name>
             try:
                 name = u.rsplit("/", 1)[-1]
-                fallbacks.append(str(PPath("public") / name))
+                fallbacks.append(str(Path("public") / name))
             except Exception:
                 pass
         if fallbacks:
@@ -217,19 +223,19 @@ def locate_in_pdf(
             try:
                 parsed = urlparse(in_url)
                 path_part = parsed.path if parsed.scheme else in_url
-                filename = PPath(unquote(path_part)).name
+                filename = Path(unquote(path_part)).name
             except Exception as e:
                 log.warning("[LOCATE] parse in_url failed: %s", e)
-                filename = PPath(unquote(in_url)).name
+                filename = Path(unquote(in_url)).name
         elif in_rel and str(in_rel).startswith("public/"):
-            filename = PPath(str(in_rel)).name
+            filename = Path(str(in_rel)).name
 
         if not filename:
             log.warning("[LOCATE] no filename resolved -> return nulls")
             return {"page": None, "url": None}
 
         # 3) 실제 파일 경로 & 절대 URL
-        pdf_path = PPath(DOCS_DIR) / filename
+        pdf_path = Path(DOCS_DIR) / filename
         base = str(request.base_url).rstrip("/")  # http://127.0.0.1:8000
         abs_url_base = f"{base}/static/docs/{quote(filename)}"
 
