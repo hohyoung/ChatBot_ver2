@@ -30,7 +30,7 @@ const WS_BASE = buildWsBase();
  * - 토큰이 있으면 ?token=... 쿼리로 전달
  * - 최초 onopen 시 클라이언트가 질문 문자열을 바로 전송(기존 프로토콜 유지)
  */
-export function openChatSocket(question, { onMessage, onClose } = {}) {
+export function openChatSocket(question, { onMessage, onClose, onError } = {}) {
     const token = getAuthToken();
     // WS_BASE는 /api까지 포함하므로 뒤에는 /chat만 붙인다 (중복 /api 방지)
     const url =
@@ -47,6 +47,7 @@ export function openChatSocket(question, { onMessage, onClose } = {}) {
             ws.send(payload);
         } catch (err) {
             console.error("WS send error", err);
+            onError && onError(err);
         }
     };
 
@@ -59,8 +60,15 @@ export function openChatSocket(question, { onMessage, onClose } = {}) {
         }
     };
 
-    ws.onclose = () => onClose && onClose();
-    ws.onerror = (e) => console.error("WS error", e);
+    ws.onclose = (e) => {
+        // wasClean: 정상 종료 여부, code: 종료 코드
+        onClose && onClose({ wasClean: e.wasClean, code: e.code });
+    };
+
+    ws.onerror = (e) => {
+        console.error("WS error", e);
+        onError && onError(e);
+    };
 
     return ws;
 }

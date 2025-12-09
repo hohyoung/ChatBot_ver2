@@ -198,12 +198,15 @@ def _select_chunks(
     candidates: List[Union[ScoredChunk, Chunk]],
     max_chars: int = 6000,
     min_score: float = 0.05,  # 최소 관련성 점수
+    high_score_threshold: float = 0.6,  # 높은 점수 임계값 (이 이상이면 무조건 포함)
     max_docs: int = 3,  # 최대 문서 수
-    max_chunks_per_doc: int = 2,  # 문서당 최대 청크 수
+    max_chunks_per_doc: int = 2,  # 문서당 최대 청크 수 (기본)
+    max_high_score_chunks: int = 4,  # 높은 점수 청크 최대 개수
 ) -> List[Chunk]:
     """
     컨텍스트에 넣을 청크 선별.
     - 점수가 min_score 미만인 청크는 제외
+    - 점수가 high_score_threshold 이상인 청크는 우선 포함 (max_high_score_chunks까지)
     - 문서 단위로 최대 max_docs개만 선택
     - 각 문서에서 최대 max_chunks_per_doc개 청크 선택 (표/본문 모두 포함)
     - 점수 높은 순으로 정렬 후 max_chars 제한
@@ -238,11 +241,37 @@ def _select_chunks(
     # 2단계: 점수 순 정렬
     filtered.sort(key=lambda x: x[1], reverse=True)
 
-    # 3단계: 문서 단위 청크 제한 (각 문서에서 max_chunks_per_doc개까지 허용)
-    log.info(f"[_select_chunks] ===== 문서 단위 청크 선택 시작 (max_chunks_per_doc={max_chunks_per_doc}) =====")
-    doc_chunk_count: Dict[str, int] = {}  # doc_id → 선택된 청크 수
-    deduplicated = []
+    # 3단계: 높은 점수 청크 우선 선택 (문서 제한 무시)
+    # high_score_threshold 이상인 청크는 max_high_score_chunks까지 무조건 포함
+    high_score_chunks = []
+    remaining_chunks = []
     for c, score in filtered:
+        if score >= high_score_threshold and len(high_score_chunks) < max_high_score_chunks:
+            high_score_chunks.append((c, score))
+        else:
+            remaining_chunks.append((c, score))
+
+    if high_score_chunks:
+        log.info(f"[_select_chunks] ===== 높은 점수 청크 {len(high_score_chunks)}개 우선 선택 (threshold={high_score_threshold}) =====")
+        for c, score in high_score_chunks:
+            ch = _as_chunk(c)
+            content_preview = (ch.content or "")[:80].replace("\n", " ")
+            log.info(f"[_select_chunks] 높은점수 선택: chunk_id={ch.chunk_id}, score={score:.4f}")
+            log.info(f"[_select_chunks]   내용: {content_preview}...")
+
+    # 4단계: 나머지 청크에서 문서 단위 청크 제한 적용
+    log.info(f"[_select_chunks] ===== 문서 단위 청크 선택 시작 (max_chunks_per_doc={max_chunks_per_doc}) =====")
+
+    # 이미 선택된 높은 점수 청크들의 doc_id 카운트
+    doc_chunk_count: Dict[str, int] = {}
+    for c, _ in high_score_chunks:
+        ch = _as_chunk(c)
+        doc_id = ch.doc_id
+        doc_chunk_count[doc_id] = doc_chunk_count.get(doc_id, 0) + 1
+
+    deduplicated = [(_as_chunk(c), score) for c, score in high_score_chunks]
+
+    for c, score in remaining_chunks:
         ch = _as_chunk(c)
         doc_id = ch.doc_id
         current_count = doc_chunk_count.get(doc_id, 0)
@@ -280,7 +309,8 @@ def _select_chunks(
         total += l
         log.debug(f"[_select_chunks] 선택: {ch.doc_title} (score={score:.3f}, chars={l})")
 
-    log.info(f"[_select_chunks] {len(candidates)}개 후보 → {len(picked)}개 선택 (min_score={min_score}, max_docs={max_docs})")
+    high_count = len(high_score_chunks) if high_score_chunks else 0
+    log.info(f"[_select_chunks] {len(candidates)}개 후보 → {len(picked)}개 선택 (높은점수={high_count}개, threshold={high_score_threshold})")
 
     return picked
 

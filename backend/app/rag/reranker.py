@@ -358,8 +358,10 @@ class LLMReranker:
 
 **질문**: {question}
 
-**청크 목록**:
+**청크 목록** (총 {len(batch)}개):
 {chr(10).join(chunks_text)}
+
+**중요: 반드시 모든 {len(batch)}개 청크를 평가해주세요!**
 
 각 청크가 질문에 **실제로 답변할 수 있는 정보를 담고 있는지** 0.0~1.0 점수로 평가해주세요.
 
@@ -379,17 +381,18 @@ class LLMReranker:
 - 구체적인 수치, 기준, 조건이 명시된 경우
 - 실제 규정, 절차, 방법이 설명된 경우
 - 질문에 대한 답변을 직접 도출할 수 있는 내용
+- **표나 데이터가 포함된 경우** (직급, 기준, 승진 등의 표)
 
-**응답 형식** (JSON):
+**응답 형식** (JSON 배열 - 반드시 {len(batch)}개 항목):
 ```json
-[
+{{"scores": [
   {{"chunk_index": 0, "relevance": 0.9, "reason": "구체적인 기준 포함"}},
   {{"chunk_index": 1, "relevance": 0.2, "reason": "빈 양식"}},
-  ...
-]
+  {{"chunk_index": 2, "relevance": 0.7, "reason": "관련 표 포함"}}
+]}}
 ```
 
-JSON만 응답하세요.
+**주의**: 청크 0부터 {len(batch) - 1}까지 모든 청크를 평가해주세요. JSON만 응답하세요.
 """
 
         try:
@@ -451,6 +454,20 @@ JSON만 응답하세요.
 
                 scores_list = [RelevanceScore(**item) for item in parsed]
                 dbg.log(f"[리랭커] 파싱 성공: {len(scores_list)}개 점수")
+
+                # 모든 청크가 평가되지 않았으면 경고 및 보완
+                if len(scores_list) < len(batch):
+                    dbg.log(f"[리랭커] 경고: {len(batch)}개 중 {len(scores_list)}개만 평가됨, 미평가 청크에 유사도 기반 점수 부여")
+                    evaluated_indices = {s.chunk_index for s in scores_list}
+                    for i in range(len(batch)):
+                        if i not in evaluated_indices:
+                            # 미평가 청크: 유사도 점수를 기반으로 fallback
+                            sim_score = batch[i].similarity or 0.5
+                            scores_list.append(RelevanceScore(
+                                chunk_index=i,
+                                relevance=sim_score * 0.7,  # 유사도의 70%로 보수적 평가
+                                reason="LLM 미평가 - 유사도 기반 추정"
+                            ))
 
             except json.JSONDecodeError as e:
                 log.warning(f"[RERANK] JSON parse error: {e}, using fallback")

@@ -21,7 +21,7 @@ from app.services.logging import get_logger
 
 log = get_logger("app.rag.intent_classifier")
 
-IntentType = Literal["doc_request", "info_request", "multi_step"]
+IntentType = Literal["doc_request", "info_request", "multi_step", "explore_table"]
 
 
 class IntentResult(BaseModel):
@@ -86,9 +86,19 @@ async def classify_intent(question: str) -> IntentResult:
      - "복무규정 보고 핵심만 알려줘"
      - "인사규정 문서에서 승진 관련 내용 찾아줘"
 
+4. **explore_table** (표/기준표 탐색 요청)
+   - 특징: 표, 기준표, 별표 등 표 형태의 데이터를 보려는 요청
+   - 키워드: "표", "기준표", "별표", "보여줘", "확인", "목록"
+   - 예시:
+     - "영어평가 기준표 보여줘"
+     - "승진 기준 표 확인해줘"
+     - "별표 6 보여줘"
+     - "토익 점수 기준표"
+     - "직급별 연봉 표"
+
 **출력 형식 (JSON만 출력):**
 {
-  "type": "doc_request" | "info_request" | "multi_step",
+  "type": "doc_request" | "info_request" | "multi_step" | "explore_table",
   "confidence": 0.0 ~ 1.0,
   "reasoning": "분류 근거 설명"
 }

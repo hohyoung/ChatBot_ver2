@@ -64,6 +64,7 @@ export default function QueryPage() {
         setLastQ(q);
 
         let receivedAnyMessage = false; // 메시지 수신 여부 추적
+        let receivedFinalEvent = false; // final 이벤트 수신 여부 추적
 
         // 타임아웃 설정: 15초 내에 메시지를 받지 못하면 연결 실패로 처리
         timeoutRef.current = setTimeout(() => {
@@ -107,6 +108,7 @@ export default function QueryPage() {
                 }
                 // 최종 이벤트: 스트리밍 완료
                 if (msg?.type === 'final' && msg.data) {
+                    receivedFinalEvent = true;
                     setLoadingStage(null);
                     setAnswer(msg.data.answer ?? '');
                     setSources(msg.data.chunks ?? msg.data.sources ?? []);
@@ -131,9 +133,22 @@ export default function QueryPage() {
                     cleanupWS();
                 }
             },
-            onClose: () => {
-                // 메시지를 한 번도 받지 못한 채 연결이 끊긴 경우 = 연결 실패
+            onClose: ({ wasClean, code } = {}) => {
+                // 정상 종료가 아니거나 final 이벤트 없이 끊긴 경우
                 if (!receivedAnyMessage) {
+                    // 메시지를 한 번도 받지 못한 채 연결이 끊긴 경우 = 초기 연결 실패
+                    setConnectionFailed(true);
+                } else if (!receivedFinalEvent && !wasClean) {
+                    // 스트리밍 도중 연결이 비정상적으로 끊긴 경우
+                    setAnswer((prev) => prev + '\n\n⚠️ 서버와의 연결이 끊어졌습니다. 다시 시도해 주세요.');
+                }
+                setConnecting(false);
+                cleanupWS();
+            },
+            onError: (err) => {
+                console.error('WebSocket error:', err);
+                // 에러 발생 시 연결 실패로 처리
+                if (!receivedFinalEvent) {
                     setConnectionFailed(true);
                 }
                 setConnecting(false);

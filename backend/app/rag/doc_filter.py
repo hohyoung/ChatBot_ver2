@@ -84,6 +84,12 @@ class DocumentFilter:
             log.debug("복합 질문 → 필터 없음")
             return None
 
+        elif intent == "explore_table":
+            # 표 탐색 요청: 표 청크만 필터링하면 관련 텍스트를 놓칠 수 있음
+            # 대신 쿼리 확장(query_expander.expand_for_table_explore)에 의존
+            # 여기서는 별도 필터 없이 visibility 필터만 적용
+            log.debug("표 탐색 요청 → 쿼리 확장으로 처리 (별도 필터 없음)")
+
         # 2. 년도 필터: ChromaDB에서 직접 지원하지 않으므로 후처리로 위임
         years = self._extract_years(tags)
         if years:

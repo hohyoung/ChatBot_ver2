@@ -169,6 +169,100 @@ def _split_table_by_sections(
     return result
 
 
+def _is_toc_or_numbered_list(table_data: List[List[str]]) -> bool:
+    """
+    목차(TOC) 또는 번호 목록인지 판단
+
+    목차/번호목록 특징:
+    1. 열 수가 1~2개
+    2. 첫 번째 열의 대부분이 특정 패턴 매칭
+    3. (2열인 경우) 두 번째 열이 페이지 번호 또는 매우 짧음
+
+    Returns:
+        True이면 목차/번호목록으로 판단 (표가 아님)
+    """
+    import re
+
+    if not table_data or len(table_data) < 2:
+        return False
+
+    col_count = len(table_data[0]) if table_data else 0
+
+    # 조건 1: 열 수가 1~2개여야 함 (3열 이상은 실제 표일 가능성 높음)
+    if col_count > 2:
+        return False
+
+    # 목차/번호목록 패턴
+    toc_patterns = [
+        r"^제\s*\d+\s*[장조항절]",      # 제1장, 제 1 조, 제1항
+        r"^[제]\s*\d+",                 # 제1, 제 2
+        r"^-{3,}\d+P?$",               # ----12P, ---12 (목차 점선+페이지)
+        r"^\d+P$",                      # 12P (페이지 번호)
+    ]
+
+    numbered_list_patterns = [
+        r"^\d+\.\s*.+",                 # 1. 내용, 2. 내용
+        r"^[①②③④⑤⑥⑦⑧⑨⑩]",           # 원문자 번호
+        r"^[가나다라마바사아자차카타파하]\.",  # 가. 나. 다.
+    ]
+
+    # 첫 번째 열에서 패턴 매칭 검사
+    first_col_cells = [_clean_cell(row[0]) for row in table_data if row]
+    total_rows = len(first_col_cells)
+
+    if total_rows == 0:
+        return False
+
+    # 목차 패턴 매칭 수
+    toc_matches = 0
+    for cell in first_col_cells:
+        for pattern in toc_patterns:
+            if re.search(pattern, cell):
+                toc_matches += 1
+                break
+
+    # 번호 목록 패턴 매칭 수
+    list_matches = 0
+    for cell in first_col_cells:
+        for pattern in numbered_list_patterns:
+            if re.search(pattern, cell):
+                list_matches += 1
+                break
+
+    # 조건 2: 첫 열의 70% 이상이 목차 패턴 → 목차로 판단
+    toc_ratio = toc_matches / total_rows
+    if toc_ratio >= 0.7:
+        log.debug(f"[TOC_FILTER] Detected as TOC: toc_ratio={toc_ratio:.2f}")
+        return True
+
+    # 조건 3: 2열이고, 첫 열의 60% 이상이 번호 목록 패턴이고,
+    #         두 번째 열이 페이지 번호 또는 매우 짧으면 → 목차/목록
+    if col_count == 2 and list_matches / total_rows >= 0.6:
+        second_col_cells = [_clean_cell(row[1]) if len(row) > 1 else "" for row in table_data]
+
+        # 두 번째 열이 페이지 번호 패턴인지 확인
+        page_pattern = r"^\d+P?$|^-*\d+P?$"
+        page_matches = sum(1 for cell in second_col_cells if re.match(page_pattern, cell))
+
+        # 두 번째 열이 매우 짧은지 확인 (평균 5자 이하)
+        avg_second_col_len = sum(len(cell) for cell in second_col_cells) / max(len(second_col_cells), 1)
+
+        if page_matches / total_rows >= 0.5:
+            log.debug(f"[TOC_FILTER] Detected as TOC (page numbers): page_ratio={page_matches/total_rows:.2f}")
+            return True
+
+        if avg_second_col_len <= 5:
+            log.debug(f"[TOC_FILTER] Detected as numbered list: avg_second_col={avg_second_col_len:.1f}")
+            return True
+
+    # 조건 4: 1열이고 80% 이상이 번호 목록 → 목록으로 판단
+    if col_count == 1 and list_matches / total_rows >= 0.8:
+        log.debug(f"[TOC_FILTER] Detected as single-column list: list_ratio={list_matches/total_rows:.2f}")
+        return True
+
+    return False
+
+
 def _calculate_confidence(table_data: List[List[str]]) -> float:
     """
     표 추출 신뢰도 계산
@@ -179,8 +273,14 @@ def _calculate_confidence(table_data: List[List[str]]) -> float:
     - 데이터 행이 너무 적음
     - 열 수가 너무 적음 (1~2열은 표가 아닐 가능성 높음)
     - 셀 내용이 너무 길음 (문장/문단이면 표가 아님)
+    - 목차/번호 목록으로 판단되는 경우
     """
     if not table_data or len(table_data) < 2:
+        return 0.0
+
+    # 목차/번호 목록 감지 - 표가 아님
+    if _is_toc_or_numbered_list(table_data):
+        log.debug("[CONFIDENCE] Filtered as TOC/numbered list")
         return 0.0
 
     confidence = 1.0
@@ -250,7 +350,11 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                 valid_tables = []
 
                 # 여러 전략으로 표 감지 시도
-                # 우선순위: 선 기반 > 혼합 > 텍스트 기반 (텍스트 전략은 오탐이 많음)
+                # 선 기반 전략만 사용 (텍스트 전략은 목차/번호목록 오탐이 심함)
+                #
+                # 참고: 테두리 없는 표(텍스트 정렬만 있는 표)는 감지 못함
+                # 하지만 이런 표는 image_extractor.py에서 이미지로 캡처 후
+                # Vision API로 처리되므로 문제 없음
                 strategies = [
                     # 1) 선 기반 (테두리가 있는 표) - 가장 정확
                     {
@@ -259,23 +363,15 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                         "snap_tolerance": 5,
                         "join_tolerance": 5,
                     },
-                    # 2) 혼합 (선 + 텍스트) - 부분 테두리 표
+                    # 2) 혼합 (세로선 + 가로 텍스트) - 부분 테두리 표
                     {
                         "vertical_strategy": "lines",
                         "horizontal_strategy": "text",
                         "snap_tolerance": 5,
                         "join_tolerance": 5,
                     },
-                    # 3) 텍스트 기반 (선이 없는 표) - 엄격한 조건
-                    # 오탐 방지: 최소 단어 수 증가
-                    {
-                        "vertical_strategy": "text",
-                        "horizontal_strategy": "text",
-                        "snap_tolerance": 3,
-                        "join_tolerance": 3,
-                        "min_words_vertical": 5,  # 3 → 5
-                        "min_words_horizontal": 5,  # 3 → 5
-                    },
+                    # 텍스트 기반 전략 비활성화 (오탐 방지)
+                    # 목차, 번호 목록, 들여쓰기된 텍스트 등을 표로 오인하는 문제
                 ]
 
                 for strategy in strategies:
@@ -289,12 +385,10 @@ def extract_tables_from_pdf(pdf_path: Path) -> List[ExtractedTable]:
                             table_area = (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1])
                             area_ratio = table_area / page_area
 
-                            # 면적 비율 조건 (전략에 따라 다름)
-                            # - 선 기반: 3% ~ 60% (표 테두리가 명확하므로 넓은 범위)
-                            # - 텍스트 기반: 5% ~ 40% (오탐 방지를 위해 좁은 범위)
-                            is_text_strategy = strategy.get("vertical_strategy") == "text"
-                            min_ratio = 0.05 if is_text_strategy else 0.03
-                            max_ratio = 0.40 if is_text_strategy else 0.60
+                            # 면적 비율 조건: 3% ~ 60%
+                            # (선 기반 전략만 사용하므로 단일 조건)
+                            min_ratio = 0.03
+                            max_ratio = 0.60
 
                             if min_ratio < area_ratio < max_ratio:
                                 valid_tables.append(t)
