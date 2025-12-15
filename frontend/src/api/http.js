@@ -191,6 +191,9 @@ export const authApi = {
         }),
 
     updateMe: (patchDoc) => patch("/auth/me", patchDoc),
+
+    // 팀 목록 조회 (일반 유저용 - 질의 페이지 팀 선택 드롭다운)
+    teams: () => get("/auth/teams"),
 };
 
 // --------------------------
@@ -250,6 +253,13 @@ export const adminApi = {
         remove: (doc_id) => del(`/admin/docs/${encodeURIComponent(doc_id)}`),
         // 청크 조회 (관리자 전용)
         chunks: (doc_id) => get(`/admin/docs/${encodeURIComponent(doc_id)}/chunks`),
+    },
+    // 팀 관리 (관리자 전용)
+    teams: {
+        list: () => get("/admin/teams"),
+        create: ({ name, description }) => post("/admin/teams", { name, description }),
+        update: (id, patchDoc) => patch(`/admin/teams/${encodeURIComponent(id)}`, patchDoc),
+        remove: (id) => del(`/admin/teams/${encodeURIComponent(id)}`),
     },
 };
 

@@ -294,6 +294,25 @@
     color: var(--text-tertiary);
 }
 
+.docs-filter select,
+.docs-filter-select {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color-strong, rgba(0,0,0,0.12));
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    background: var(--surface);
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.docs-filter select:focus,
+.docs-filter-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
 /* ===== Errors & Empty ===== */
 .docs-error {
     padding: 14px 16px;
@@ -327,6 +346,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.875rem;
+    table-layout: fixed;
 }
 
 .docs-table th,
@@ -334,6 +354,9 @@
     padding: 12px 16px;
     vertical-align: middle;
     text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .docs-table th {
@@ -365,12 +388,14 @@
 .docs-title {
     font-weight: 600;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .docs-sub {
     font-size: 0.75rem;
     color: var(--text-tertiary);
-    margin-top: 2px;
 }
 
 .docs-muted {
@@ -378,47 +403,44 @@
 }
 
 /* ===== Column widths ===== */
-.col-index {
-    width: 48px;
+.docs-table .col-index {
+    width: 40px;
     text-align: center;
     color: var(--text-tertiary);
 }
 
-.col-uploader {
-    width: 120px;
+.docs-table .col-uploader {
+    width: 110px;
 }
 
-.col-date {
-    width: 150px;
-    white-space: nowrap;
+.docs-table .col-date {
+    width: 130px;
+    text-align: center;
 }
 
-.col-vis {
+.docs-table .col-team {
     width: 80px;
+    text-align: center;
 }
 
-.col-chunks {
+.docs-table .col-chunks {
     width: 70px;
-    text-align: right;
+    text-align: center;
 }
 
-.col-preview {
+.docs-table .col-preview {
     width: 80px;
+    text-align: center;
 }
 
-.col-preview a {
+.docs-table .col-preview a {
     color: var(--accent-blue);
     text-decoration: none;
     font-weight: 500;
 }
 
-.col-preview a:hover {
+.docs-table .col-preview a:hover {
     text-decoration: underline;
-}
-
-.col-actions {
-    width: 100px;
-    text-align: right;
 }
 
 /* ===== Buttons - Use Global Styles ===== */
@@ -469,12 +491,12 @@
     }
 
     .docs-table {
-        min-width: 800px;
+        min-width: 600px;
     }
 
-    .col-date,
-    .col-vis,
-    .col-chunks {
+    .docs-table .col-date,
+    .docs-table .col-team,
+    .docs-table .col-chunks {
         display: none;
     }
 }

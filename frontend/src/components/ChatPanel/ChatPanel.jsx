@@ -71,7 +71,11 @@ export default function ChatPanel({
     onSelectSource,
     onAsk,
     onFeedback,
-    initialQuestion  // 외부에서 전달된 초기 질문 (DocsPage 요약 등)
+    initialQuestion,  // 외부에서 전달된 초기 질문 (DocsPage 요약 등)
+    teams = [],       // 팀 목록
+    teamsLoading = false, // 팀 목록 로딩 상태
+    selectedTeamId,   // 선택된 팀 ID
+    onTeamChange,     // 팀 변경 핸들러
 }) {
     // 로컬 스토리지에서 대화 내역 로드
     const [history, setHistory] = useState(() => loadHistoryFromStorage());
@@ -228,25 +232,47 @@ export default function ChatPanel({
         <div className={`chat-container ${faqOpen ? 'faq-panel-open' : ''}`}>
             {/* 메인 채팅 영역 */}
             <div className="chat-main">
-                {/* 채팅 헤더: 새 대화 + FAQ 버튼 */}
+                {/* 채팅 헤더: 팀 선택 + 새 대화 + FAQ 버튼 */}
                 <div className="chat-header">
-                    <button
-                        type="button"
-                        className="btn-new-chat"
-                        onClick={handleClearHistory}
-                        disabled={connecting || history.length === 0}
-                    >
-                        <FaPlus />
-                        <span>새 대화</span>
-                    </button>
-                    <button
-                        type="button"
-                        className={`btn-faq-header ${faqOpen ? 'active' : ''}`}
-                        onClick={toggleFaq}
-                    >
-                        <FaQuestionCircle />
-                        <span>FAQ</span>
-                    </button>
+                    {/* 팀 선택 드롭다운 (칩 스타일) */}
+                    <div className="team-selector">
+                        {teamsLoading ? (
+                            <div className="team-selector-loading">
+                                <span className="team-loading-dot"></span>
+                                <span>로딩 중</span>
+                            </div>
+                        ) : teams.length > 0 ? (
+                            <select
+                                value={selectedTeamId ?? ''}
+                                onChange={(e) => onTeamChange && onTeamChange(e.target.value ? Number(e.target.value) : null)}
+                                disabled={connecting}
+                                title="답변을 검색할 팀을 선택하세요"
+                            >
+                                {teams.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                            </select>
+                        ) : null}
+                    </div>
+                    <div className="chat-header-buttons">
+                        <button
+                            type="button"
+                            className="btn-new-chat"
+                            onClick={handleClearHistory}
+                            disabled={connecting || history.length === 0}
+                        >
+                            <FaPlus />
+                            <span>새 대화</span>
+                        </button>
+                        <button
+                            type="button"
+                            className={`btn-faq-header ${faqOpen ? 'active' : ''}`}
+                            onClick={toggleFaq}
+                        >
+                            <FaQuestionCircle />
+                            <span>FAQ</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="chat-history">

@@ -21,6 +21,30 @@ router = APIRouter()
 # ─────────────
 # 스키마
 # ─────────────
+
+# --- 팀 스키마 ---
+class TeamOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    description: Optional[str] = None
+    is_active: bool
+    user_count: int = 0  # 소속 유저 수
+    doc_count: int = 0   # 팀 문서 수
+
+
+class TeamCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    description: Optional[str] = Field(default=None, max_length=200)
+
+
+class TeamPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    description: Optional[str] = Field(default=None, max_length=200)
+    is_active: Optional[bool] = None
+
+
+# --- 유저 스키마 ---
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -28,6 +52,8 @@ class UserOut(BaseModel):
     username: str
     security_level: int
     is_active: bool
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None  # 팀 이름 (조회용)
 
 
 class UserPatch(BaseModel):
@@ -36,6 +62,7 @@ class UserPatch(BaseModel):
     password: Optional[str] = Field(default=None, min_length=6, max_length=128)
     security_level: Optional[int] = Field(default=None, ge=1, le=4)
     is_active: Optional[bool] = None
+    team_id: Optional[int] = None  # 팀 배정 (None으로 설정하면 팀 해제)
 
 
 # ─────────────
@@ -57,8 +84,154 @@ def _require_admin(authorization: str | None, db: Session) -> m.User:
 
 
 # ─────────────
-# API
+# 팀 관리 API
 # ─────────────
+@router.get("/teams", response_model=List[TeamOut])
+def list_teams(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """팀 목록 조회 (관리자 전용)"""
+    _require_admin(authorization, db)
+
+    teams = db.query(m.Team).order_by(m.Team.id).all()
+    result = []
+    for team in teams:
+        # 소속 유저 수 계산
+        user_count = db.query(m.User).filter(m.User.team_id == team.id).count()
+
+        # 팀 문서 수는 벡터DB에서 조회해야 하지만, 성능상 0으로 표시 (필요 시 확장)
+        doc_count = 0
+
+        result.append(TeamOut(
+            id=team.id,
+            name=team.name,
+            description=team.description,
+            is_active=team.is_active,
+            user_count=user_count,
+            doc_count=doc_count,
+        ))
+
+    return result
+
+
+@router.post("/teams", response_model=TeamOut)
+def create_team(
+    body: TeamCreate,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """팀 생성 (관리자 전용)"""
+    _require_admin(authorization, db)
+
+    # 이름 중복 체크
+    exists = db.query(m.Team).filter(m.Team.name == body.name).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="이미 존재하는 팀 이름입니다.")
+
+    team = m.Team(name=body.name, description=body.description)
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+
+    return TeamOut(
+        id=team.id,
+        name=team.name,
+        description=team.description,
+        is_active=team.is_active,
+        user_count=0,
+        doc_count=0,
+    )
+
+
+@router.patch("/teams/{team_id}", response_model=TeamOut)
+def patch_team(
+    team_id: int = Path(..., ge=1),
+    body: TeamPatch = ...,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """팀 수정 (관리자 전용)"""
+    _require_admin(authorization, db)
+
+    team = db.get(m.Team, team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+
+    # 이름 변경 시 중복 체크
+    if body.name and body.name != team.name:
+        exists = db.query(m.Team).filter(m.Team.name == body.name).first()
+        if exists:
+            raise HTTPException(status_code=409, detail="이미 존재하는 팀 이름입니다.")
+        team.name = body.name
+
+    if body.description is not None:
+        team.description = body.description
+    if body.is_active is not None:
+        team.is_active = body.is_active
+
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+
+    user_count = db.query(m.User).filter(m.User.team_id == team.id).count()
+
+    return TeamOut(
+        id=team.id,
+        name=team.name,
+        description=team.description,
+        is_active=team.is_active,
+        user_count=user_count,
+        doc_count=0,
+    )
+
+
+@router.delete("/teams/{team_id}")
+def delete_team(
+    team_id: int = Path(..., ge=1),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    팀 삭제 (관리자 전용)
+
+    - 소속 유저들의 team_id는 NULL로 변경됨 (ON DELETE SET NULL)
+    - 해당 팀의 문서는 그대로 유지됨 (별도 정리 필요)
+    """
+    _require_admin(authorization, db)
+
+    team = db.get(m.Team, team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+
+    # 소속 유저 수 확인 (안내용)
+    user_count = db.query(m.User).filter(m.User.team_id == team_id).count()
+
+    db.delete(team)
+    db.commit()
+
+    return {
+        "ok": True,
+        "message": f"팀이 삭제되었습니다. {user_count}명의 유저가 팀 미배정 상태가 됩니다."
+    }
+
+
+# ─────────────
+# 유저 관리 API
+# ─────────────
+def _user_to_out(user: m.User) -> UserOut:
+    """User 모델을 UserOut으로 변환 (팀 이름 포함)"""
+    return UserOut(
+        id=user.id,
+        name=user.name,
+        username=user.username,
+        security_level=user.security_level,
+        is_active=user.is_active,
+        team_id=user.team_id,
+        team_name=user.team.name if user.team else None,
+    )
+
+
 @router.get("/users", response_model=List[UserOut])
 def list_users(
     authorization: str = Header(None),
@@ -67,13 +240,14 @@ def list_users(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
+    """유저 목록 조회 (관리자 전용)"""
     _require_admin(authorization, db)
     query = db.query(m.User)
     if q:
         like = f"%{q}%"
         query = query.filter((m.User.username.ilike(like)) | (m.User.name.ilike(like)))
     users = query.order_by(m.User.id.desc()).offset(offset).limit(limit).all()
-    return [UserOut.model_validate(u) for u in users]
+    return [_user_to_out(u) for u in users]
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -83,6 +257,7 @@ def patch_user(
     authorization: str = Header(None),
     db: Session = Depends(get_db),
 ):
+    """유저 수정 (관리자 전용)"""
     _require_admin(authorization, db)
     user = db.get(m.User, user_id)
     if not user:
@@ -110,10 +285,21 @@ def patch_user(
     if body.is_active is not None:
         user.is_active = body.is_active
 
+    # 팀 배정 변경
+    if "team_id" in body.model_fields_set:
+        if body.team_id is not None:
+            # 팀 존재 여부 확인
+            team = db.get(m.Team, body.team_id)
+            if not team:
+                raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+            if not team.is_active:
+                raise HTTPException(status_code=400, detail="비활성화된 팀에는 배정할 수 없습니다.")
+        user.team_id = body.team_id
+
     db.add(user)
     db.commit()
     db.refresh(user)
-    return UserOut.model_validate(user)
+    return _user_to_out(user)
 
 
 @router.delete("/users/{user_id}")

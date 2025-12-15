@@ -28,15 +28,17 @@ const WS_BASE = buildWsBase();
  * 채팅 소켓을 연다.
  * - 서버 라우트가 /api/chat (백엔드에서 프록시를 타든 직접 접근하든 동일하게 맞춤)
  * - 토큰이 있으면 ?token=... 쿼리로 전달
+ * - team_id가 있으면 &team_id=... 쿼리로 전달 (팀별 문서 격리)
  * - 최초 onopen 시 클라이언트가 질문 문자열을 바로 전송(기존 프로토콜 유지)
  */
-export function openChatSocket(question, { onMessage, onClose, onError } = {}) {
+export function openChatSocket(question, { onMessage, onClose, onError, teamId } = {}) {
     const token = getAuthToken();
     // WS_BASE는 /api까지 포함하므로 뒤에는 /chat만 붙인다 (중복 /api 방지)
-    const url =
-        token
-            ? `${WS_BASE}/chat/?token=${encodeURIComponent(token)}`
-            : `${WS_BASE}/chat/`;
+    const params = new URLSearchParams();
+    if (token) params.set("token", token);
+    if (teamId != null) params.set("team_id", String(teamId));
+    const queryString = params.toString();
+    const url = `${WS_BASE}/chat/${queryString ? "?" + queryString : ""}`;
 
     const ws = new WebSocket(url);
 

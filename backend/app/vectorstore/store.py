@@ -204,6 +204,16 @@ def query_by_embedding(
 ) -> Dict[str, Any]:
     col = _get_or_create_collection()
     query_embeddings = _as_query_embeddings(query_embedding)
+
+    log.info("[CHROMA_QUERY] n_results=%d, where=%s", n_results, where)
+
+    # 전체 컬렉션 통계 로깅 (디버깅용)
+    try:
+        total_count = col.count()
+        log.info("[CHROMA_QUERY] 컬렉션 전체 청크 수: %d", total_count)
+    except Exception as e:
+        log.warning("[CHROMA_QUERY] 컬렉션 카운트 실패: %s", e)
+
     res = col.query(
         query_embeddings=query_embeddings,
         n_results=n_results,
@@ -214,6 +224,29 @@ def query_by_embedding(
             "distances",
         ],
     )
+
+    # 결과 통계 로깅
+    result_count = len(res.get("ids", [[]])[0]) if res.get("ids") else 0
+    log.info("[CHROMA_QUERY] 쿼리 결과: %d개 청크 반환", result_count)
+
+    # 필터에 매칭되는 문서 수 확인 (디버깅용)
+    if where:
+        try:
+            filtered_res = col.get(where=where, include=["metadatas"])
+            filtered_count = len(filtered_res.get("ids", []))
+            log.info("[CHROMA_QUERY] where 필터에 매칭되는 전체 청크: %d개", filtered_count)
+
+            # team_id 분포 확인
+            team_dist = {}
+            for meta in filtered_res.get("metadatas", []) or []:
+                if meta:
+                    tid = meta.get("team_id", "<없음>")
+                    team_dist[tid] = team_dist.get(tid, 0) + 1
+            if team_dist:
+                log.info("[CHROMA_QUERY] 필터된 청크 team_id 분포: %s", team_dist)
+        except Exception as e:
+            log.warning("[CHROMA_QUERY] 필터 매칭 확인 실패: %s", e)
+
     return res
 
 
@@ -289,7 +322,7 @@ def doc_exists_by_hash(
 def list_docs_by_owner(owner_id: int) -> list[dict]:
     """
     owner_id로 내 문서 목록 조회.
-    반환: [{doc_id, doc_title, visibility, doc_url, uploaded_at, chunk_count}, ...]
+    반환: [{doc_id, doc_title, visibility, doc_url, uploaded_at, chunk_count, team_id, team_name}, ...]
     """
     col = get_collection()
     res = col.get(
@@ -311,6 +344,8 @@ def list_docs_by_owner(owner_id: int) -> list[dict]:
                 "visibility": meta.get("visibility"),
                 "doc_url": meta.get("doc_url"),
                 "doc_relpath": meta.get("doc_relpath"),
+                "team_id": meta.get("team_id"),
+                "team_name": meta.get("team_name"),
                 "chunk_count": 0,
                 "_uploaded_at_min": None,  # 최초 업로드 시각 집계
             },
@@ -320,6 +355,10 @@ def list_docs_by_owner(owner_id: int) -> list[dict]:
             d["doc_url"] = meta.get("doc_url")
         if not d.get("doc_relpath") and meta.get("doc_relpath"):
             d["doc_relpath"] = meta.get("doc_relpath")
+        if not d.get("team_id") and meta.get("team_id"):
+            d["team_id"] = meta.get("team_id")
+        if not d.get("team_name") and meta.get("team_name"):
+            d["team_name"] = meta.get("team_name")
         ua = meta.get("uploaded_at")
         if ua:
             if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
@@ -367,7 +406,7 @@ def delete_doc_for_owner(doc_id: str, owner_id: int) -> Dict[str, Any]:
 def list_all_docs() -> list[dict]:
     """
     모든 소유자의 문서를 doc_id 단위로 집계.
-    ★★★ uploaded_at 필드를 포함하여 반환하도록 수정 ★★★
+    ★★★ uploaded_at, team_id, team_name 필드를 포함하여 반환 ★★★
     """
     col = get_collection()
     res = col.get(include=["metadatas"])
@@ -390,6 +429,8 @@ def list_all_docs() -> list[dict]:
                 "owner_username": meta.get("owner_username"),
                 "doc_url": meta.get("doc_url"),
                 "doc_relpath": meta.get("doc_relpath"),
+                "team_id": meta.get("team_id"),
+                "team_name": meta.get("team_name"),
                 "chunk_count": 0,
                 # _uploaded_at_min을 임시 필드로 사용하여 가장 오래된 시간을 추적
                 "_uploaded_at_min": None,
@@ -403,11 +444,15 @@ def list_all_docs() -> list[dict]:
             if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
                 d["_uploaded_at_min"] = ua
 
-        # 대표 URL/relpath 미설정 시 최초 값 세팅
+        # 대표 URL/relpath/team 미설정 시 최초 값 세팅
         if (not d.get("doc_url")) and meta.get("doc_url"):
             d["doc_url"] = meta.get("doc_url")
         if (not d.get("doc_relpath")) and meta.get("doc_relpath"):
             d["doc_relpath"] = meta.get("doc_relpath")
+        if (not d.get("team_id")) and meta.get("team_id"):
+            d["team_id"] = meta.get("team_id")
+        if (not d.get("team_name")) and meta.get("team_name"):
+            d["team_name"] = meta.get("team_name")
 
     # 최종적으로 _uploaded_at_min 값을 uploaded_at으로 옮기고 정렬
     out = []
@@ -537,6 +582,8 @@ def search_docs(
                 "doc_relpath": meta.get("doc_relpath"),
                 "visibility": meta.get("visibility"),
                 "owner_username": meta.get("owner_username"),
+                "team_id": meta.get("team_id"),
+                "team_name": meta.get("team_name"),
                 "chunk_count": 0,
                 "uploaded_at": None,
                 "_uploaded_at_min": None,
@@ -550,6 +597,12 @@ def search_docs(
         if ua:
             if d["_uploaded_at_min"] is None or ua < d["_uploaded_at_min"]:
                 d["_uploaded_at_min"] = ua
+
+        # team 정보 갱신
+        if not d.get("team_id") and meta.get("team_id"):
+            d["team_id"] = meta.get("team_id")
+        if not d.get("team_name") and meta.get("team_name"):
+            d["team_name"] = meta.get("team_name")
 
         # 태그 수집
         tags_str = meta.get("tags")

@@ -30,6 +30,92 @@
     box-sizing: border-box;
     border-bottom: 1px solid #e9ecef;
     background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+    gap: 12px;
+}
+
+.chat-header-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* 팀 선택 드롭다운 - 칩 스타일 */
+.team-selector {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.team-selector select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding: 8px 32px 8px 14px;
+    border: 1px solid #e9ecef;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    font-size: 13px;
+    font-weight: 600;
+    color: #495057;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 100px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 12px;
+}
+
+.team-selector select:hover:not(:disabled) {
+    border-color: #0066cc;
+    background-color: #f0f7ff;
+    color: #0066cc;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%230066cc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+.team-selector select:focus {
+    outline: none;
+    border-color: #0066cc;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+    background-color: #ffffff;
+}
+
+.team-selector select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 팀 로딩 상태 */
+.team-selector-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid #e9ecef;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    font-size: 13px;
+    font-weight: 500;
+    color: #868e96;
+    min-width: 90px;
+}
+
+.team-loading-dot {
+    width: 8px;
+    height: 8px;
+    background: #868e96;
+    border-radius: 50%;
+    animation: teamLoadingPulse 1s ease-in-out infinite;
+}
+
+@keyframes teamLoadingPulse {
+    0%, 100% {
+        opacity: 0.4;
+        transform: scale(0.8);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .btn-new-chat,

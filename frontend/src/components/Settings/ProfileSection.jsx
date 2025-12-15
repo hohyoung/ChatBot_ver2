@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { authApi } from "../../api/http";
 import { FaEdit, FaSave, FaTimes } from "react-icons/fa";
 
@@ -8,15 +8,29 @@ export default function ProfileSection({ user, onUserRefresh }) {
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState("");
+    const [teams, setTeams] = useState([]);
 
     const [form, setForm] = useState(() => ({
         name: user?.name || "",
         username: user?.username || "",
         email: user?.email || "",
+        team_id: user?.team_id ?? null,
         current_password: "",
         new_password: "",
         new_password_confirm: "",
     }));
+
+    // 팀 목록 로드
+    useEffect(() => {
+        (async () => {
+            try {
+                const list = await authApi.teams();
+                setTeams(list || []);
+            } catch {
+                setTeams([]);
+            }
+        })();
+    }, []);
 
     // user 바뀌면 폼 초기화
     useMemo(() => {
@@ -24,6 +38,7 @@ export default function ProfileSection({ user, onUserRefresh }) {
             name: user?.name || "",
             username: user?.username || "",
             email: user?.email || "",
+            team_id: user?.team_id ?? null,
             current_password: "",
             new_password: "",
             new_password_confirm: "",
@@ -43,6 +58,10 @@ export default function ProfileSection({ user, onUserRefresh }) {
             if (form.name !== (user?.name || "")) patch.name = form.name.trim();
             if (form.username !== (user?.username || "")) patch.username = form.username.trim();
             if (form.email !== (user?.email || "")) patch.email = form.email.trim();
+            // 팀 변경 감지 (null vs number 비교)
+            const oldTeamId = user?.team_id ?? null;
+            const newTeamId = form.team_id;
+            if (newTeamId !== oldTeamId) patch.team_id = newTeamId;
             if (Object.keys(patch).length) await authApi.updateMe(patch);
 
             const touchedPwd = form.current_password || form.new_password || form.new_password_confirm;
@@ -62,6 +81,8 @@ export default function ProfileSection({ user, onUserRefresh }) {
             setMsg("저장되었습니다.");
             setEditing(false);
             onUserRefresh?.();
+            // 팀 등 정보 변경 시 다른 페이지에 알림 (업로드 페이지 등)
+            window.dispatchEvent(new CustomEvent("auth:changed"));
         } catch (e) {
             setMsg(e?.message || "저장 중 오류가 발생했습니다.");
         } finally {
@@ -74,6 +95,7 @@ export default function ProfileSection({ user, onUserRefresh }) {
             name: user?.name || "",
             username: user?.username || "",
             email: user?.email || "",
+            team_id: user?.team_id ?? null,
             current_password: "",
             new_password: "",
             new_password_confirm: "",
@@ -118,6 +140,10 @@ export default function ProfileSection({ user, onUserRefresh }) {
                         <div className="kv-label">이메일</div>
                         <div className="kv-value">{user?.email || "-"}</div>
                     </div>
+                    <div className="kv-row">
+                        <div className="kv-label">소속 팀</div>
+                        <div className="kv-value">{user?.team_name || <span className="text-muted">미설정</span>}</div>
+                    </div>
                 </div>
             )}
 
@@ -147,6 +173,21 @@ export default function ProfileSection({ user, onUserRefresh }) {
                         onChange={(e) => setField("email", e.target.value)}
                         placeholder="email@example.com"
                     />
+
+                    <label>소속 팀</label>
+                    <select
+                        className="admin__input"
+                        value={form.team_id ?? ""}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            setField("team_id", val === "" ? null : Number(val));
+                        }}
+                    >
+                        <option value="">-- 선택 안함 --</option>
+                        {teams.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </select>
 
                     <div className="form-sep">비밀번호 변경</div>
                     <div className="pwd-grid">

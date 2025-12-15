@@ -435,6 +435,8 @@ async def process_job(
     visibility: str = "public",
     owner_id: Optional[int] = None,
     owner_username: Optional[str] = None,
+    team_id: Optional[int] = None,
+    team_name: Optional[str] = None,
 ) -> None:
     """
     업로드 잡 처리 파이프라인:
@@ -765,13 +767,20 @@ async def process_job(
             # ✅ 업로드 시각(UTC ISO8601)을 공통 메타로 저장
             # target_visibility: 최종 전환할 visibility 값도 함께 저장 (나중에 전환 시 참조)
             uploaded_at = datetime.now(timezone.utc).isoformat()
+            common_meta = {
+                "uploaded_at": uploaded_at,
+                "target_visibility": visibility,  # pending → 이 값으로 전환 예정
+            }
+            # 팀 정보 추가 (팀별 문서 격리)
+            if team_id is not None:
+                common_meta["team_id"] = str(team_id)
+            if team_name:
+                common_meta["team_name"] = team_name
+
             upsert_chunks(
                 chunks,
                 embeddings=embs,
-                common_metadata={
-                    "uploaded_at": uploaded_at,
-                    "target_visibility": visibility,  # pending → 이 값으로 전환 예정
-                },
+                common_metadata=common_meta,
             )
             log.info("upserted file=%s chunks=%d (pending)", file_path.name, len(chunks))
 

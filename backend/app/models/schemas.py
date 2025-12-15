@@ -356,6 +356,8 @@ class DocSearchResult(StrictModel):
     doc_relpath: Optional[str] = None
     visibility: Optional[str] = None
     owner_username: Optional[str] = None
+    team_id: Optional[str] = None
+    team_name: Optional[str] = None
     chunk_count: int = 0
     uploaded_at: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
@@ -436,6 +438,9 @@ class AuthUser(BaseModel):
     # ✅ 이메일 검증/인증 도입 전까지 optional
     email: Optional[EmailStr] = None
     security_level: int
+    # 팀별 문서 격리 기능
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
 
 
 class InternalSignupRequest(BaseModel):

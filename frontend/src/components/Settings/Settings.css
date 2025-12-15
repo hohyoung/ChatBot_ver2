@@ -51,3 +51,68 @@
         flex-wrap: wrap;
     }
 }
+
+/* ===== 내 문서 테이블 레이아웃 (table-layout: fixed) ===== */
+.my-docs-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.my-docs-table th,
+.my-docs-table td {
+    padding: 12px 16px;
+    text-align: left;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.my-docs-table .col-title {
+    width: auto;
+}
+
+.my-docs-table .col-date {
+    width: 140px;
+    text-align: center;
+}
+
+.my-docs-table .col-team {
+    width: 100px;
+    text-align: center;
+}
+
+.my-docs-table .col-num {
+    width: 70px;
+    text-align: center;
+}
+
+.my-docs-table .col-preview {
+    width: 80px;
+    text-align: center;
+}
+
+.my-docs-table .col-delete {
+    width: 80px;
+    text-align: center;
+}
+
+.my-docs-table .col-preview a {
+    color: var(--accent-blue, #3b82f6);
+    text-decoration: none;
+}
+
+.my-docs-table .col-preview a:hover {
+    text-decoration: underline;
+}
+
+.my-docs-table .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+}
+
+.my-docs-table .cell-title {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

@@ -23,26 +23,47 @@ QUIET_LOGGERS = [
 def setup_logging() -> None:
     """
     콘솔 + 파일 로깅 설정.
+
+    콘솔: WARNING 이상만 출력 (최소한의 로그)
+    파일: DEBUG/INFO 포함 상세 로그 저장 (log.txt)
+
     .env:
-      LOG_LEVEL=INFO|DEBUG
+      LOG_LEVEL=INFO|DEBUG  (파일 로그 레벨)
       LOG_TO_FILE=true|false
+      CONSOLE_LOG_LEVEL=WARNING|INFO|DEBUG  (콘솔 로그 레벨, 기본 WARNING)
     """
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    level_name = (os.getenv("LOG_LEVEL") or "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
+    # 파일 로그 레벨 (상세)
+    file_level_name = (os.getenv("LOG_LEVEL") or "INFO").upper()
+    file_level = getattr(logging, file_level_name, logging.INFO)
+
+    # 콘솔 로그 레벨 (최소)
+    console_level_name = (os.getenv("CONSOLE_LOG_LEVEL") or "WARNING").upper()
+    console_level = getattr(logging, console_level_name, logging.WARNING)
 
     fmt = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    fmt_console = "%(levelname)s [%(name)s] %(message)s"  # 콘솔은 간결하게
 
+    handlers: list[logging.Handler] = []
+
+    # 콘솔 핸들러 (WARNING 이상만)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter(fmt_console))
+    handlers.append(console_handler)
+
+    # 파일 핸들러 (상세 로그)
     if (os.getenv("LOG_TO_FILE", "true") or "true").lower() in ("1", "true", "yes"):
         fh = RotatingFileHandler(
-            LOGS_DIR / "app.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+            LOGS_DIR / "log.txt", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
         )
+        fh.setLevel(file_level)
         fh.setFormatter(logging.Formatter(fmt))
         handlers.append(fh)
 
-    logging.basicConfig(level=level, format=fmt, handlers=handlers, force=True)
+    # 루트 로거는 가장 낮은 레벨로 설정 (핸들러에서 필터링)
+    logging.basicConfig(level=logging.DEBUG, format=fmt, handlers=handlers, force=True)
 
     # 외부 라이브러리 로그 레벨 조정 (WARNING 이상만 출력)
     for logger_name in QUIET_LOGGERS:

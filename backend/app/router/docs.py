@@ -64,16 +64,24 @@ async def upload_docs(
     if not has_upload_permission(user.security_level):
         raise HTTPException(status_code=403, detail="insufficient role for upload")
 
+    # 팀 소속 검증: 팀에 배정된 유저만 업로드 가능
+    if not user.team_id:
+        raise HTTPException(
+            status_code=403,
+            detail="팀에 소속되어 있지 않아 문서를 업로드할 수 없습니다. 관리자에게 팀 배정을 요청하세요."
+        )
+
     job_id = new_id("ingest")
     accepted, skipped, saved = save_batch(job_id, files)
 
     log.info(
-        "upload received job_id=%s accepted=%d skipped=%d doc_type=%s visibility=%s files=%s",
+        "upload received job_id=%s accepted=%d skipped=%d doc_type=%s visibility=%s team_id=%s files=%s",
         job_id,
         accepted,
         skipped,
         doc_type,
         visibility,
+        user.team_id,
         [p.name for p in saved],
     )
 
@@ -86,6 +94,8 @@ async def upload_docs(
             visibility=visibility,
             owner_id=int(user.id),
             owner_username=user.username,
+            team_id=user.team_id,
+            team_name=user.team_name,
         )
     )
 

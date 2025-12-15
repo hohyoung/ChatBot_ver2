@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { FaLock } from "react-icons/fa";
 
 import { docsApi } from "../api/http";
@@ -32,16 +33,21 @@ function SettingsSwitcher({ value, onChange }) {
 }
 
 export default function SettingsPage() {
+  const location = useLocation(); // 페이지 경로 감지
   const [user, setUser] = useState(null);
   const [err, setErr] = useState("");
   const [mode, setMode] = useState("profile");
   const isLoggedIn = !!user;
 
+  // 페이지 진입 시마다 유저 정보 새로 로드 (location.pathname 의존)
   useEffect(() => {
     (async () => {
-      try { setUser(await fetchMe()); } catch { setUser(null); }
+      try { setUser(await fetchMe(true)); } catch { setUser(null); }
     })();
+  }, [location.pathname]);
 
+  // 로그인/로그아웃 이벤트 리스너
+  useEffect(() => {
     const onAuthChanged = () => window.location.reload();
     const onStorage = (e) => { if (e.key === "auth_token") onAuthChanged(); };
     window.addEventListener("auth:changed", onAuthChanged);
@@ -84,7 +90,7 @@ export default function SettingsPage() {
             <ProfileSection
               user={user}
               onUserRefresh={async () => {
-                try { const u = await fetchMe(); setUser(u || null); } catch { }
+                try { const u = await fetchMe(true); setUser(u || null); } catch { }
               }}
             />
           ) : (

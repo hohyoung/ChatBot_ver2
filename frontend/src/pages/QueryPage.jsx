@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { openChatSocket } from '../api/ws.js';
-import { post, SERVER_ERROR_MESSAGE } from '../api/http.js';
+import { post, authApi, SERVER_ERROR_MESSAGE } from '../api/http.js';
 
 import ChatPanel from '../components/ChatPanel/ChatPanel.jsx';
 
@@ -25,10 +25,36 @@ export default function QueryPage() {
     const [connectionRecovered, setConnectionRecovered] = useState(false); // 연결 복구 상태
     const [lastQ, setLastQ] = useState('');
     const [initialQuestion, setInitialQuestion] = useState(null); // DocsPage에서 전달된 초기 질문
+
+    // 팀 관련 상태
+    const [teams, setTeams] = useState([]);
+    const [teamsLoading, setTeamsLoading] = useState(true); // 팀 목록 로딩 상태
+    const [selectedTeamId, setSelectedTeamId] = useState(null); // null = 전체 검색 (레거시 호환)
+
     const wsRef = useRef(null);
     const queryHealthCheckRef = useRef(null); // 질의 중 health 체크 타이머
     const absoluteTimeoutRef = useRef(null); // 절대 타임아웃 타이머
     const recoveryCheckRef = useRef(null); // 복구 체크 타이머
+
+    // 팀 목록 로드
+    useEffect(() => {
+        (async () => {
+            setTeamsLoading(true);
+            try {
+                const list = await authApi.teams();
+                setTeams(list || []);
+                // 기본 선택: 첫 번째 팀 (있으면)
+                if (list && list.length > 0) {
+                    setSelectedTeamId(list[0].id);
+                }
+            } catch {
+                // 로그인 안 했거나 팀 조회 실패 시 무시
+                setTeams([]);
+            } finally {
+                setTeamsLoading(false);
+            }
+        })();
+    }, []);
 
     // 연결 실패 상태일 때 주기적으로 health 체크하여 복구 감지
     useEffect(() => {
@@ -138,6 +164,7 @@ export default function QueryPage() {
         }, HEALTH_CHECK_INTERVAL_MS);
 
         wsRef.current = openChatSocket(q, {
+            teamId: selectedTeamId,
             onMessage: (msg) => {
                 // 이전 연결 실패 상태였다면 복구 알림
                 if (wasConnectionFailed) {
@@ -227,6 +254,10 @@ export default function QueryPage() {
                 onAsk={ask}
                 onFeedback={vote}
                 initialQuestion={initialQuestion}
+                teams={teams}
+                teamsLoading={teamsLoading}
+                selectedTeamId={selectedTeamId}
+                onTeamChange={setSelectedTeamId}
             />
         </div>
     );

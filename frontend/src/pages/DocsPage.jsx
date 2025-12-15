@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { FaLock } from 'react-icons/fa';
 
-import { docsApi } from '../api/http';
+import { docsApi, authApi } from '../api/http';
 import { me as fetchMe } from '../store/auth';
 import { fmtDate } from '../utils/dateFormat';
 
@@ -14,7 +13,6 @@ import './DocsPage.css';
 const DOCS_LOAD_LIMIT = 200; // 문서 목록 로드 최대 개수
 
 export default function DocsPage() {
-  const navigate = useNavigate();
 
   // 사용자 상태
   const [user, setUser] = useState(null);
@@ -26,9 +24,13 @@ export default function DocsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // 팀 목록 (필터용)
+  const [teams, setTeams] = useState([]);
+
   // 필터 상태 (심플하게)
   const [qTitle, setQTitle] = useState('');
   const [qUploader, setQUploader] = useState('');
+  const [qTeam, setQTeam] = useState(''); // 팀 필터
 
   // 챗봇 사서 상태
   const [librarianQuery, setLibrarianQuery] = useState('');
@@ -83,6 +85,8 @@ export default function DocsPage() {
   useEffect(() => {
     if (isLoggedIn) {
       loadDocs();
+      // 팀 목록 로드
+      authApi.teams().then(setTeams).catch(() => setTeams([]));
     }
   }, [isLoggedIn]);
 
@@ -95,30 +99,21 @@ export default function DocsPage() {
       result = result.filter(doc => selectedDocIds.includes(doc.doc_id));
     }
 
-    // 2) 일반 필터 (제목, 업로더)
+    // 2) 일반 필터 (제목, 업로더, 팀)
     const t = (qTitle || '').trim().toLowerCase();
     const u = (qUploader || '').trim().toLowerCase();
-    if (t || u) {
+    const teamFilter = qTeam;
+    if (t || u || teamFilter) {
       result = result.filter((doc) => {
         const title = (doc.doc_title || doc.doc_id || '').toLowerCase();
         const uploader = (doc.owner_username || '').toLowerCase();
-        return (!t || title.includes(t)) && (!u || uploader.includes(u));
+        const teamMatch = !teamFilter || String(doc.team_id) === teamFilter;
+        return (!t || title.includes(t)) && (!u || uploader.includes(u)) && teamMatch;
       });
     }
 
     return result;
-  }, [docs, qTitle, qUploader, selectedDocIds]);
-
-  // 문서 요약 (QueryPage로 이동)
-  const handleSummarize = (doc) => {
-    navigate('/', {
-      state: {
-        docId: doc.doc_id,
-        docTitle: doc.doc_title,
-        initialQuestion: `"${doc.doc_title}" 문서의 내용을 요약해주세요.`,
-      },
-    });
-  };
+  }, [docs, qTitle, qUploader, qTeam, selectedDocIds]);
 
   // 챗봇 사서 (자연어로 문서 검색)
   const handleLibrarianSearch = async () => {
@@ -164,6 +159,7 @@ export default function DocsPage() {
   const handleResetFilters = () => {
     setQTitle('');
     setQUploader('');
+    setQTeam('');
     setSelectedDocIds([]);
     setLibrarianQuery('');
     setLibrarianResponse(null);
@@ -175,7 +171,7 @@ export default function DocsPage() {
       <div className="docs-page">
         <div className="docs-page-header">
           <h2>문서 열람</h2>
-          <p className="docs-page-desc">전체 문서를 조회/검색하고 요약을 확인할 수 있습니다.</p>
+          <p className="docs-page-desc">전체 문서를 조회/검색할 수 있습니다.</p>
         </div>
         <CardLoader message="사용자 정보 확인 중..." />
       </div>
@@ -186,7 +182,7 @@ export default function DocsPage() {
     <div className="docs-page">
       <div className="docs-page-header">
         <h2>문서 열람</h2>
-        <p className="docs-page-desc">전체 문서를 조회/검색하고 요약을 확인할 수 있습니다.</p>
+        <p className="docs-page-desc">전체 문서를 조회/검색할 수 있습니다.</p>
       </div>
 
       {/* 로그인 가드 배너 */}
@@ -293,6 +289,19 @@ export default function DocsPage() {
           />
         </div>
         <div className="docs-filter">
+          <label>팀</label>
+          <select
+            value={qTeam}
+            onChange={(e) => setQTeam(e.target.value)}
+            className="docs-filter-select"
+          >
+            <option value="">전체</option>
+            {teams.map((t) => (
+              <option key={t.id} value={String(t.id)}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="docs-filter">
           <button
             className="btn btn-reset"
             onClick={handleResetFilters}
@@ -318,27 +327,25 @@ export default function DocsPage() {
                 <th>문서명</th>
                 <th className="col-uploader">업로더</th>
                 <th className="col-date">업로드 날짜</th>
-                <th className="col-vis">가시성</th>
+                <th className="col-team">팀</th>
                 <th className="col-chunks">청크수</th>
                 <th className="col-preview">미리보기</th>
-                <th className="col-actions">요약</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((doc, idx) => (
                 <tr key={doc.doc_id}>
                   <td className="col-index">{idx + 1}</td>
-                  <td title={doc.doc_id}>
+                  <td title={doc.doc_title || doc.doc_id}>
                     <div className="docs-title">{doc.doc_title || doc.doc_id}</div>
-                    <div className="docs-sub">doc_id: {doc.doc_id}</div>
                   </td>
-                  <td className="col-uploader">
-                    <div>@{doc.owner_username || '-'}</div>
+                  <td className="col-uploader" title={doc.owner_username || '-'}>
+                    @{doc.owner_username || '-'}
                   </td>
                   <td className="docs-muted col-date">
                     {fmtDate(doc.uploaded_at)}
                   </td>
-                  <td className="col-vis">{doc.visibility || '-'}</td>
+                  <td className="col-team">{doc.team_name || '-'}</td>
                   <td className="col-chunks">{doc.chunk_count ?? 0}</td>
                   <td className="col-preview">
                     {doc.doc_url ? (
@@ -346,16 +353,8 @@ export default function DocsPage() {
                         열기
                       </a>
                     ) : (
-                      <span className="docs-sub">URL 없음</span>
+                      <span className="docs-sub">-</span>
                     )}
-                  </td>
-                  <td className="col-actions">
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleSummarize(doc)}
-                    >
-                      요약
-                    </button>
                   </td>
                 </tr>
               ))}

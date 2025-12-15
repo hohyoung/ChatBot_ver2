@@ -5,10 +5,13 @@ import FAQCard from './FAQCard';
 import LoadingSpinner from '../LoadingSpinner/LoadingSpinner';
 import './FAQList.css';
 
+// 표시할 최대 FAQ 개수
+const MAX_FAQ_DISPLAY = 7;
+
 /**
  * FAQ 리스트 컴포넌트
  *
- * FAQ 목록을 API에서 가져와 표시합니다.
+ * FAQ 목록을 API에서 가져와 표시합니다. (상위 7개만 표시)
  */
 const FAQList = ({ onQuestionClick, isInPanel = false }) => {
   const [faqList, setFaqList] = useState([]);
@@ -75,7 +78,7 @@ const FAQList = ({ onQuestionClick, isInPanel = false }) => {
 
         {!loading && !error && faqList.length > 0 && (
           <div className="faq-cards">
-            {faqList.map((faq, index) => (
+            {faqList.slice(0, MAX_FAQ_DISPLAY).map((faq, index) => (
               <FAQCard
                 key={index}
                 question={faq.question}
@@ -90,13 +93,15 @@ const FAQList = ({ onQuestionClick, isInPanel = false }) => {
   }
 
   // 기존 독립 컴포넌트 형태 (하위 호환)
+  const displayList = faqList.slice(0, MAX_FAQ_DISPLAY);
+
   return (
     <div className="faq-list-container">
       <div className="faq-list-header">
         <h3 className="faq-list-title">
           자주 묻는 질문
-          {faqList.length > 0 && (
-            <span className="faq-count-badge">{faqList.length}</span>
+          {displayList.length > 0 && (
+            <span className="faq-count-badge">{displayList.length}</span>
           )}
         </h3>
       </div>
@@ -117,9 +122,9 @@ const FAQList = ({ onQuestionClick, isInPanel = false }) => {
           </div>
         )}
 
-        {!loading && !error && faqList.length > 0 && (
+        {!loading && !error && displayList.length > 0 && (
           <div className="faq-cards">
-            {faqList.map((faq, index) => (
+            {displayList.map((faq, index) => (
               <FAQCard
                 key={index}
                 question={faq.question}

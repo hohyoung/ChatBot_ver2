@@ -247,7 +247,7 @@ async def cluster_questions(
 
 async def generate_faq(
     min_questions: int = 20,
-    top_n: int = 10,
+    top_n: int = 7,
     days: int = 7
 ) -> List[dict]:
     """
@@ -255,7 +255,7 @@ async def generate_faq(
 
     Args:
         min_questions: FAQ 생성에 필요한 최소 질문 수 (기본: 20)
-        top_n: 반환할 최대 FAQ 수 (기본: 10)
+        top_n: 반환할 최대 FAQ 수 (기본: 7)
         days: 분석할 기간 (일) (기본: 7일)
 
     Returns:

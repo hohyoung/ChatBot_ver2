@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import time
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from app.rag.retriever import retrieve
 from app.rag.generator import generate_answer_stream
@@ -30,8 +31,20 @@ USE_GAR_PHASE3 = os.getenv("GAR_PHASE3_ENABLED", "false").lower() == "true"
 
 
 @router.websocket("/")
-async def chat_ws(ws: WebSocket):
+async def chat_ws(ws: WebSocket, team_id: Optional[int] = Query(default=None)):
+    """
+    채팅 WebSocket 엔드포인트.
+
+    Args:
+        ws: WebSocket 연결
+        team_id: 팀 ID (팀별 문서 격리). 쿼리 파라미터로 전달.
+                 예: ws://localhost:8000/api/chat/?team_id=1
+    """
     await ws.accept()
+    logger.info("=" * 70)
+    logger.info("[CHAT_WS] 새 WebSocket 연결 수립")
+    logger.info("[CHAT_WS] team_id 파라미터: %s (type=%s)", team_id, type(team_id).__name__)
+
     try:
         raw_question = await ws.receive_text()
 
@@ -40,7 +53,9 @@ async def chat_ws(ws: WebSocket):
         question = raw_question[4:].strip() if skip_log else raw_question
 
         t_start = time.perf_counter()
-        logger.debug(f"RAG 시작: {question[:30]}... (skip_log={skip_log})")
+        logger.info("[CHAT_WS] 질문 수신: %r", question[:100])
+        logger.info("[CHAT_WS] skip_log=%s, team_id=%s", skip_log, team_id)
+        logger.debug(f"RAG 시작: {question[:30]}... (skip_log={skip_log}, team_id={team_id})")
 
         # ====================================================================
         # Feature Flag 분기: GAR Phase 2/3 vs 기존 RAG
@@ -58,6 +73,7 @@ async def chat_ws(ws: WebSocket):
 
             async for token, chunks in orchestrate_gar_stream(
                 question=question,
+                team_id=team_id,
                 use_phase2=USE_GAR_PHASE2,
                 use_phase3=USE_GAR_PHASE3,
                 websocket=ws
@@ -95,9 +111,9 @@ async def chat_ws(ws: WebSocket):
         else:
             # 기존 RAG 파이프라인 (태깅 제거됨 - 방안 3)
 
-            # 순수 벡터 검색 (태깅 없이)
+            # 순수 벡터 검색 (태깅 없이, 팀 필터 적용)
             t1 = time.perf_counter()
-            candidates = await retrieve(question, tags=None)
+            candidates = await retrieve(question, team_id=team_id, tags=None)
 
             t2 = time.perf_counter()
             logger.debug(

@@ -138,28 +138,112 @@ def _restore_tags_list(meta: Dict[str, Any]) -> List[str]:
     return []
 
 
+def _build_team_filter(team_id: Optional[int]) -> Dict[str, Any]:
+    """
+    팀 격리 필터 생성.
+    - team_id가 있으면: 해당 팀 문서만 (레거시 문서 제외)
+    - team_id가 없으면: 기존 동작 (visibility만 필터) - 모든 문서 검색
+
+    ⚠️ 중요: ChromaDB는 "$exists" 연산자를 지원하지 않음
+       따라서 team_id 필드가 없는 레거시 문서는 team_id 필터에 매칭되지 않음
+       → 레거시 문서를 포함하려면 team_id=None으로 검색해야 함
+    """
+    base_filter = {"visibility": {"$in": ["org", "public"]}}
+
+    if team_id is None:
+        # team_id가 None이면 모든 문서 검색 (레거시 호환)
+        logger.info("[TEAM_FILTER] team_id=None → visibility 필터만 적용 (모든 문서 검색)")
+        logger.info("[TEAM_FILTER] base_filter=%s", base_filter)
+        return base_filter
+
+    # ChromaDB에서 team_id는 문자열로 저장됨
+    team_id_str = str(team_id)
+
+    # 팀 필터: 해당 팀 문서만 검색
+    # 주의: ChromaDB에서 "$exists": False는 지원되지 않음
+    # team_id 필드가 없는 레거시 문서는 이 필터에 매칭되지 않음!
+    team_filter = {
+        "$and": [
+            base_filter,
+            {"team_id": {"$eq": team_id_str}},
+        ]
+    }
+    logger.debug("[TEAM_FILTER] team_id=%s, filter=%s", team_id, team_filter)
+    return team_filter
+
+
 async def retrieve(
-    question: str, tags: Optional[List[str]] = None, k: int = 5
+    question: str,
+    team_id: Optional[int] = None,
+    tags: Optional[List[str]] = None,
+    k: int = 5,
 ) -> List[ScoredChunk]:
+    """
+    문서 검색 및 리랭킹.
+
+    Args:
+        question: 검색 쿼리
+        team_id: 팀 ID (None이면 전체 검색 - 레거시 호환)
+        tags: 쿼리 태그
+        k: 반환할 청크 수
+
+    Returns:
+        스코어 순으로 정렬된 ScoredChunk 리스트
+    """
+    logger.info("=" * 60)
+    logger.info("[RETRIEVE_START] 검색 시작")
+    logger.info("[RETRIEVE_START] question=%r", question[:100])
+    logger.info("[RETRIEVE_START] team_id=%s, tags=%s, k=%d", team_id, tags, k)
+
     # 1) 쿼리 임베딩 (비동기 - 동시성 제어 포함)
     q_vec = await embed_query_async(question)
+    logger.debug("[RETRIEVE] 임베딩 생성 완료 (dim=%d)", len(q_vec) if q_vec else 0)
 
-    # 2) Chroma 질의
+    # 2) 팀 필터 생성
+    where_filter = _build_team_filter(team_id)
+    logger.info("[RETRIEVE] 최종 where_filter=%s", where_filter)
+
+    # 3) Chroma 질의
+    n_candidates = max(k * RETRIEVAL_CANDIDATES_MULTIPLIER, DEFAULT_MIN_CANDIDATES)
+    logger.info("[RETRIEVE] ChromaDB 쿼리: n_results=%d", n_candidates)
+
     raw = query_by_embedding(
         q_vec,
-        n_results=max(k * RETRIEVAL_CANDIDATES_MULTIPLIER, DEFAULT_MIN_CANDIDATES),
-        where={"visibility": {"$in": ["org", "public"]}},
+        n_results=n_candidates,
+        where=where_filter,
     )
 
     docs_rows = raw.get("documents", []) or []
     metas_rows = raw.get("metadatas", []) or []
     dists_rows = raw.get("distances", []) or []
+
+    logger.info("[RETRIEVE] ChromaDB 결과: docs_rows=%d개 배치", len(docs_rows))
+
     if not docs_rows:
+        logger.warning("[RETRIEVE] ChromaDB 결과 없음! where_filter가 너무 제한적일 수 있음")
         return []
 
     docs = docs_rows[0] if len(docs_rows) > 0 else []
     metas = metas_rows[0] if len(metas_rows) > 0 else []
     dists = dists_rows[0] if len(dists_rows) > 0 else []
+
+    logger.info("[RETRIEVE] 검색된 청크 수: %d개", len(docs))
+
+    # 검색된 청크들의 team_id 분포 로깅
+    team_id_dist = {}
+    for meta in metas:
+        m = meta or {}
+        tid = m.get("team_id", "<없음>")
+        team_id_dist[tid] = team_id_dist.get(tid, 0) + 1
+    logger.info("[RETRIEVE] 검색 결과 team_id 분포: %s", team_id_dist)
+
+    # 검색된 문서 제목 로깅
+    doc_titles = {}
+    for meta in metas:
+        m = meta or {}
+        title = m.get("doc_title", "<제목없음>")
+        doc_titles[title] = doc_titles.get(title, 0) + 1
+    logger.info("[RETRIEVE] 검색 결과 문서 분포: %s", doc_titles)
 
     # 후보 chunk_id들의 부스트 맵 조회
     chunk_ids: List[str] = []
@@ -183,20 +267,33 @@ async def retrieve(
         chunk = _to_chunk_out(chunk_id=cid, content=doc, meta=meta)
         candidates.append((ScoredChunk(chunk=chunk, score=final), final))
 
-        logger.debug(
-            "[retrieve] cid=%s score=%.3f doc=%s",
-            cid,
-            final,
-            chunk.doc_title,
-        )
+        # 상위 5개만 상세 로깅
+        if i < 5:
+            logger.info(
+                "[RETRIEVE_CHUNK] #%d cid=%s dist=%.4f sim=%.4f ff=%.4f final=%.4f team_id=%s doc=%s",
+                i + 1, cid, dist, sim, ff, final,
+                meta.get("team_id", "<없음>"),
+                meta.get("doc_title", "<제목없음>")[:30],
+            )
 
     candidates.sort(key=lambda x: x[1], reverse=True)
-    return [sc for sc, _ in candidates[:k]]
+    result = [sc for sc, _ in candidates[:k]]
+
+    logger.info("[RETRIEVE_END] 최종 반환: %d개 청크", len(result))
+    for i, sc in enumerate(result):
+        logger.info(
+            "[RETRIEVE_RESULT] #%d score=%.4f chunk_id=%s doc=%s",
+            i + 1, sc.score or 0, sc.chunk.chunk_id, sc.chunk.doc_title[:30] if sc.chunk.doc_title else "<제목없음>"
+        )
+    logger.info("=" * 60)
+
+    return result
 
 
 async def retrieve_multi_query(
     queries: List[str],
     k_per_query: int = 10,
+    team_id: Optional[int] = None,
     tags: Optional[List[str]] = None,
     where_filter: Optional[dict] = None,
     diversify: bool = True,
@@ -214,8 +311,9 @@ async def retrieve_multi_query(
     Args:
         queries: 확장된 쿼리 리스트 (첫 번째가 원본)
         k_per_query: 쿼리당 검색 개수 (기본 10)
+        team_id: 팀 ID (None이면 전체 검색 - 레거시 호환)
         tags: 쿼리 태그 (기존 호환)
-        where_filter: ChromaDB where 필터 (doc_filter.py에서 생성)
+        where_filter: ChromaDB where 필터 (doc_filter.py에서 생성, 팀 필터와 병합됨)
         diversify: 다양성 보정 여부 (기본 True)
 
     Returns:
@@ -226,15 +324,29 @@ async def retrieve_multi_query(
         >>> results = await retrieve_multi_query(
         ...     queries=queries,
         ...     k_per_query=10,
+        ...     team_id=1,
         ...     tags=["vacation", "2024"],
         ...     where_filter={"tags": {"$contains": "vacation"}},
         ... )
         >>> len(results)  # 최대 10개 반환
         10
     """
-    logger.debug(f"[multi_query] 시작: {len(queries)}개 쿼리")
+    logger.info("=" * 60)
+    logger.info("[MULTI_QUERY_START] 다단계 검색 시작")
+    logger.info("[MULTI_QUERY_START] queries=%d개, team_id=%s, where_filter=%s", len(queries), team_id, where_filter)
+    for i, q in enumerate(queries):
+        logger.info("[MULTI_QUERY_START] 쿼리 %d: %r", i + 1, q[:50])
 
     all_results: Dict[str, Tuple[ScoredChunk, float]] = {}  # chunk_id → (chunk, score)
+
+    # 팀 필터 생성 및 where_filter와 병합
+    team_filter = _build_team_filter(team_id)
+    if where_filter:
+        # 기존 where_filter와 팀 필터 병합
+        combined_filter = {"$and": [team_filter, where_filter]}
+    else:
+        combined_filter = team_filter
+    logger.info("[MULTI_QUERY] combined_filter=%s", combined_filter)
 
     # Step 1: 각 쿼리별로 검색 (P1-1: 병렬화)
     # 임베딩 생성을 병렬로 처리 (비동기 API 사용 - 동시성 제어 포함)
@@ -258,11 +370,11 @@ async def retrieve_multi_query(
             query,
         )
 
-        # ChromaDB 검색
+        # ChromaDB 검색 (팀 필터 적용)
         raw = query_by_embedding(
             q_vec,
             n_results=k_per_query,
-            where=where_filter or {"visibility": {"$in": ["org", "public"]}},
+            where=combined_filter,
         )
 
         # 결과 파싱 (기존 retrieve() 로직 재사용)

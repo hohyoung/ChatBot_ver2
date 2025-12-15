@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import {
     FaFileUpload,
     FaCheckCircle,
@@ -120,6 +121,7 @@ const StatusDisplay = ({ status, job, isSubmitting }) => {
 };
 
 export default function UploadPage() {
+    const location = useLocation(); // 페이지 경로 감지
     const [files, setFiles] = useState([]);
     const [job, setJob] = useState(null);
     const [status, setStatus] = useState(null);
@@ -133,8 +135,10 @@ export default function UploadPage() {
     const isLoggedIn = !!user;
     // ✅ 업로드 허용 등급: 1~3 허용, 4(차단)는 불가
     const canUploadByLevel = isLoggedIn && Number(user?.security_level) <= MAX_UPLOAD_SECURITY_LEVEL;
+    // ✅ 팀 소속 여부: 팀에 배정된 사용자만 업로드 가능
+    const hasTeam = isLoggedIn && user?.team_id != null;
     const isUploading = isSubmitting || status?.status === "running" || status?.status === "pending" || (job && !status);
-    const disabled = !canUploadByLevel || isUploading; // 비로그인 or 4등급 or 업로딩 중
+    const disabled = !canUploadByLevel || !hasTeam || isUploading; // 비로그인 or 4등급 or 팀 미배정 or 업로딩 중
 
     // 진행 중인 업로드 작업 복원
     const restoreActiveJobs = useCallback(async () => {
@@ -152,26 +156,36 @@ export default function UploadPage() {
         }
     }, []);
 
+    // 유저 정보 로드 함수 (항상 서버에서 최신 정보 가져옴)
+    const loadUser = async () => {
+        try {
+            const userData = await fetchMe(true); // forceRefresh=true
+            setUser(userData);
+            return userData;
+        } catch {
+            setUser(null);
+            return null;
+        }
+    };
+
+    // 페이지 진입 시마다 유저 정보 새로 로드 (location.pathname 의존)
     useEffect(() => {
         (async () => {
-            try {
-                const userData = await fetchMe();
-                setUser(userData);
-
-                // 로그인된 사용자인 경우 진행 중인 작업 복원
-                if (userData) {
-                    await restoreActiveJobs();
-                }
-            } catch {
-                setUser(null);
+            const userData = await loadUser();
+            // 로그인된 사용자인 경우 진행 중인 작업 복원
+            if (userData) {
+                await restoreActiveJobs();
             }
         })();
+    }, [location.pathname, restoreActiveJobs]);
 
-        // ⬇ 로그인/로그아웃 시 페이지 새로고침
+    // 로그인/로그아웃 이벤트 리스너
+    useEffect(() => {
         const onAuthChanged = () => window.location.reload();
         const onStorage = (e) => {
             if (e.key === "auth_token") onAuthChanged();
         };
+
         window.addEventListener("auth:changed", onAuthChanged);
         window.addEventListener("storage", onStorage);
 
@@ -180,7 +194,7 @@ export default function UploadPage() {
             window.removeEventListener("auth:changed", onAuthChanged);
             window.removeEventListener("storage", onStorage);
         };
-    }, [restoreActiveJobs]);
+    }, []);
 
     const pollStatus = async (job_id) => {
         // 기존 폴링 정리
@@ -225,7 +239,7 @@ export default function UploadPage() {
     };
 
     const upload = async () => {
-        if (!canUploadByLevel) return;
+        if (!canUploadByLevel || !hasTeam) return;
         if (files.length === 0) {
             setErrorMsg("업로드할 파일을 선택해주세요.");
             return;
@@ -257,7 +271,7 @@ export default function UploadPage() {
     };
 
     const addFiles = (newFiles) => {
-        if (!canUploadByLevel) return; // 안전장치
+        if (!canUploadByLevel || !hasTeam) return; // 안전장치
         setFiles((prev) => {
             const combined = [...prev, ...newFiles];
             return Array.from(new Map(combined.map((f) => [f.name, f])).values());
@@ -265,7 +279,7 @@ export default function UploadPage() {
     };
 
     const onPick = (e) => {
-        if (!canUploadByLevel) return;
+        if (!canUploadByLevel || !hasTeam) return;
         const picked = Array.from(e.target.files || []);
         addFiles(picked);
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -273,17 +287,17 @@ export default function UploadPage() {
 
     const handleDragOver = (e) => {
         e.preventDefault(); e.stopPropagation();
-        if (!canUploadByLevel) return;
+        if (!canUploadByLevel || !hasTeam) return;
         setIsDragOver(true);
     };
     const handleDragLeave = (e) => {
         e.preventDefault(); e.stopPropagation();
-        if (!canUploadByLevel) return;
+        if (!canUploadByLevel || !hasTeam) return;
         setIsDragOver(false);
     };
     const handleDrop = (e) => {
         e.preventDefault(); e.stopPropagation();
-        if (!canUploadByLevel) return;
+        if (!canUploadByLevel || !hasTeam) return;
         setIsDragOver(false);
         const dropped = Array.from(e.dataTransfer.files || []);
         if (dropped.length > 0) addFiles(dropped);
@@ -293,6 +307,7 @@ export default function UploadPage() {
 
     const showLoginGuard = !isLoggedIn;
     const showLevelGuard = isLoggedIn && !canUploadByLevel; // (= 4등급)
+    const showTeamGuard = isLoggedIn && canUploadByLevel && !hasTeam; // 로그인 + 등급 OK + 팀 미배정
 
     return (
         <div className="upload-page">
@@ -328,6 +343,15 @@ export default function UploadPage() {
                     </div>
                 </div>
             )}
+            {showTeamGuard && (
+                <div className="guard-banner">
+                    <FaInfoCircle />
+                    <div>
+                        <strong>팀 설정이 필요해요</strong>
+                        <div>설정 페이지에서 소속 팀을 선택하면 문서를 업로드할 수 있어요.</div>
+                    </div>
+                </div>
+            )}
 
             {/* 드랍존 카드 */}
             <div className="section">
@@ -338,7 +362,8 @@ export default function UploadPage() {
                             <FaLock />
                             <div className="blocked-text">
                                 {isUploading ? "업로드 처리 중입니다... 잠시만 기다려주세요." :
-                                    showLoginGuard ? "로그인 후 이용 가능합니다" : "업로드 권한이 없습니다"}
+                                    showLoginGuard ? "로그인 후 이용 가능합니다" :
+                                    showTeamGuard ? "설정에서 팀을 선택해주세요" : "업로드 권한이 없습니다"}
                             </div>
                         </div>
                     )}

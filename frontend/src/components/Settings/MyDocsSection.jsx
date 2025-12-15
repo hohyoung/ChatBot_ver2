@@ -141,36 +141,31 @@ export default function MyDocsSection({ isLoggedIn, docsApi }) {
                 </div>
             </div>
 
-            <table className="data-table pretty">
+            <table className="data-table pretty my-docs-table">
                 <thead>
                     <tr>
-                        <th>제목</th>
+                        <th className="col-title">제목</th>
                         <th className="col-date">업로드 날짜</th>
-                        <th className="col-vis">가시성</th>
+                        <th className="col-team">팀</th>
                         <th className="col-num">청크수</th>
                         <th className="col-preview">미리보기</th>
-                        <th className="col-actions">삭제</th>
+                        <th className="col-delete">삭제</th>
                     </tr>
                 </thead>
                 <tbody>
                     {filtered.map((it) => (
                         <tr key={it.doc_id}>
-                            <td>
+                            <td className="col-title">
                                 <div className="cell-title">{it.doc_title || "-"}</div>
-                                <div className="cell-sub mono" title={it.doc_id} />
                             </td>
-                            <td className="muted">{fmtDate(it.uploaded_at || it.created_at || it.updated_at)}</td>
-                            <td>{(it.visibility || "").toLowerCase() === "public" ? <span className="chip chip--public">공개</span>
-                                : (it.visibility || "").toLowerCase() === "private" ? <span className="chip chip--private">비공개</span>
-                                    : <span className="chip chip--org">사내</span>}</td>
+                            <td className="col-date muted">{fmtDate(it.uploaded_at || it.created_at || it.updated_at)}</td>
+                            <td className="col-team">{it.team_name || "-"}</td>
                             <td className="col-num">{it.chunk_count ?? 0}</td>
                             <td className="col-preview">
                                 {it.doc_url ? <a href={it.doc_url} target="_blank" rel="noreferrer">열기</a> : "—"}
                             </td>
-                            <td className="col-actions">
-                                <div className="admin__actions">
-                                    <button className="btn btn-danger" onClick={() => onDelete(it.doc_id)}>삭제</button>
-                                </div>
+                            <td className="col-delete">
+                                <button className="btn btn-danger btn-sm" onClick={() => onDelete(it.doc_id)}>삭제</button>
                             </td>
                         </tr>
                     ))}

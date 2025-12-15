@@ -134,6 +134,7 @@ async def orchestrate_gar_phase1(question: str) -> GARContext:
 
 async def orchestrate_gar_stream(
     question: str,
+    team_id: int | None = None,  # 팀 ID (팀별 문서 격리)
     use_phase2: bool = False,  # Feature Flag: Phase 2 사용 여부
     use_phase3: bool = False,  # Feature Flag: Phase 3 사용 여부 (리랭킹)
     websocket = None,  # WebSocket 연결 (진행 상태 전송용)
@@ -147,6 +148,7 @@ async def orchestrate_gar_stream(
 
     Args:
         question: 사용자 질문
+        team_id: 팀 ID (None이면 전체 검색 - 레거시 호환)
         use_phase2: Phase 2 활성화 여부 (기본 False)
         use_phase3: Phase 3 활성화 여부 (기본 False)
 
@@ -154,7 +156,7 @@ async def orchestrate_gar_stream(
         (token, None): 토큰 스트리밍
         ("", chunks): 최종 청크 리스트
     """
-    log.info("=== GAR 파이프라인 시작 (스트리밍, Phase2=%s, Phase3=%s) ===", use_phase2, use_phase3)
+    log.info("=== GAR 파이프라인 시작 (스트리밍, team_id=%s, Phase2=%s, Phase3=%s) ===", team_id, use_phase2, use_phase3)
 
     # 진행 상태 전송: 질문 의도 파악
     if websocket:
@@ -197,12 +199,35 @@ async def orchestrate_gar_stream(
 
         all_chunks = []
 
+        # [핵심 수정] 원본 질문도 검색 쿼리에 포함 (LLM 확장 없이 직접 검색)
+        # 서브쿼리 분해/확장 과정에서 원본 의미가 손실될 수 있으므로
+        # 원본 질문으로도 검색하여 결과를 보완함
+        log.info("[Phase 2] 원본 질문으로 직접 검색: %r", question)
+
+        doc_titles = [d.doc_title for d in context.doc_context.recent_docs]
+        doc_filter_instance = doc_filter.build_filter_criteria(
+            intent=context.intent.type,
+            doc_context=doc_titles,
+            tags=context.used_tags,
+        )
+
+        # 원본 질문 직접 검색 (확장 없이)
+        original_query_chunks = await retrieve_multi_query(
+            queries=[question],  # 원본 질문만
+            k_per_query=10,
+            team_id=team_id,
+            tags=context.used_tags,
+            where_filter=doc_filter_instance,
+            diversify=False,
+        )
+        log.info("원본 질문 검색 완료: %d개 청크", len(original_query_chunks))
+        all_chunks.extend(original_query_chunks)
+
         # 각 서브쿼리별로 처리
         for sub_query in context.subqueries:
             log.info("서브쿼리 처리: %r", sub_query.text)
 
             # Step 1: 쿼리 확장
-            doc_titles = [d.doc_title for d in context.doc_context.recent_docs]
             expanded_queries = await expander.expand_query(
                 original_query=sub_query.text,
                 doc_context=doc_titles,
@@ -231,10 +256,11 @@ async def orchestrate_gar_stream(
                 except Exception as e:
                     log.warning(f"WebSocket stage 전송 실패 (무시): {e}")
 
-            # Step 3: 다단계 검색
+            # Step 3: 다단계 검색 (팀 필터 적용)
             chunks = await retrieve_multi_query(
                 queries=expanded_queries,
                 k_per_query=10,
+                team_id=team_id,
                 tags=context.used_tags,
                 where_filter=where_filter,
                 diversify=True,
@@ -245,7 +271,7 @@ async def orchestrate_gar_stream(
 
         # 서브쿼리별 결과 병합 및 중복 제거
         candidates = _merge_and_deduplicate(all_chunks, top_k=10)
-        log.info("Phase 2 완료: 총 %d개 → 병합 후 %d개", len(all_chunks), len(candidates))
+        log.info("Phase 2 완료: 총 %d개 (원본+서브쿼리) → 병합 후 %d개", len(all_chunks), len(candidates))
 
     else:
         # 기존 방식 (Phase 1만 사용)
@@ -260,8 +286,8 @@ async def orchestrate_gar_stream(
             except Exception as e:
                 log.warning(f"WebSocket stage 전송 실패 (무시): {e}")
 
-        log.info("검색 (기존 retriever 사용, Phase 2 비활성화)")
-        candidates = await retrieve(question, context.used_tags, k=5)
+        log.info("검색 (기존 retriever 사용, Phase 2 비활성화, team_id=%s)", team_id)
+        candidates = await retrieve(question, team_id=team_id, tags=context.used_tags, k=5)
 
     t_retrieval_end = time.perf_counter()
     context.metrics.retrieval_ms = (t_retrieval_end - t_retrieval_start) * 1000

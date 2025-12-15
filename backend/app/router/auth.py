@@ -46,6 +46,14 @@ class MeOut(BaseModel):
     username: str
     security_level: int
     is_active: bool
+    team_id: Optional[int] = None
+    team_name: Optional[str] = None
+
+
+class TeamSimple(BaseModel):
+    """일반 유저용 팀 정보 (간소화)"""
+    id: int
+    name: str
 
 
 # ─────────────
@@ -84,6 +92,8 @@ def current_user(
         username=user.username,
         email=email,
         security_level=int(getattr(user, "security_level", 3)),
+        team_id=user.team_id,
+        team_name=user.team.name if user.team else None,
     )
 
 
@@ -157,6 +167,76 @@ def me(authorization: str = Header(None), db: Session = Depends(get_db)):
         username=user.username,
         security_level=user.security_level,
         is_active=user.is_active,
+        team_id=user.team_id,
+        team_name=user.team.name if user.team else None,
+    )
+
+
+class MePatch(BaseModel):
+    """유저 본인 정보 수정용 스키마"""
+    name: Optional[str] = None
+    username: Optional[str] = None
+    email: Optional[str] = None
+    team_id: Optional[int] = None  # 팀 변경 허용
+
+
+@router.patch("/me")
+def update_me(
+    body: MePatch,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    현재 로그인 유저 본인 정보 수정.
+    - name, username, email, team_id 변경 가능
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="인증 토큰이 없습니다.")
+
+    token = authorization.split(" ", 1)[1]
+    data = decode_access_token(token)
+    if not data or "sub" not in data:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않습니다.")
+
+    user = db.get(m.User, int(data["sub"]))
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    # 변경 적용 (명시적으로 전달된 필드만)
+    patch_data = body.model_dump(exclude_unset=True)
+
+    if "name" in patch_data and patch_data["name"]:
+        user.name = patch_data["name"].strip()
+    if "username" in patch_data and patch_data["username"]:
+        # 중복 체크
+        exists = db.query(m.User).filter(
+            m.User.username == patch_data["username"],
+            m.User.id != user.id
+        ).first()
+        if exists:
+            raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다.")
+        user.username = patch_data["username"].strip()
+    if "email" in patch_data:
+        user.email = patch_data["email"].strip() if patch_data["email"] else None
+    if "team_id" in patch_data:
+        # team_id 유효성 검사
+        if patch_data["team_id"] is not None:
+            team = db.get(m.Team, patch_data["team_id"])
+            if not team or not team.is_active:
+                raise HTTPException(status_code=400, detail="유효하지 않은 팀입니다.")
+        user.team_id = patch_data["team_id"]
+
+    db.commit()
+    db.refresh(user)
+
+    return MeOut(
+        id=user.id,
+        name=user.name,
+        username=user.username,
+        security_level=user.security_level,
+        is_active=user.is_active,
+        team_id=user.team_id,
+        team_name=user.team.name if user.team else None,
     )
 
 
@@ -168,3 +248,19 @@ def check_username(
     """아이디 사용 가능 여부 조회: { available: true/false }"""
     exists = db.query(m.User).filter(m.User.username == username).first()
     return {"available": exists is None}
+
+
+@router.get("/teams", response_model=list[TeamSimple])
+def list_teams_for_user(
+    db: Session = Depends(get_db),
+):
+    """
+    팀 목록 조회 (활성화된 팀만)
+
+    - 질의 페이지에서 답변팀 선택 드롭다운에 사용
+    - 로그인 불필요 (비로그인 사용자도 팀 선택 가능)
+    """
+    # 활성화된 팀만 조회
+    teams = db.query(m.Team).filter(m.Team.is_active == True).order_by(m.Team.id).all()
+
+    return [TeamSimple(id=t.id, name=t.name) for t in teams]
